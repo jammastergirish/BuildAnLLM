@@ -9,6 +9,7 @@ import einops
 from dataclasses import dataclass
 from jaxtyping import Float, Tensor
 from layernorm import LayerNormWithEinops, LayerNormWithoutEinops, LayerNormWithTorch
+from embed import EmbedWithoutTorch, EmbedWithTorch
 
 device = torch.device(
     "mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu"
