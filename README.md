@@ -23,7 +23,7 @@ This is a **pre-training** implementation - we train transformer models from scr
 - **GPT-2 style**: Learned positional embeddings, LayerNorm, GELU activation
 - **LLaMA style**: RoPE (Rotary Position Embedding), RMSNorm, SwiGLU activation
 
-Switch between architectures by setting `MODEL_ARCHITECTURE = "GPT"` or `"LLAMA"` in `train.py`.
+Switch between architectures using the `--architecture` command-line argument in `train.py` (e.g., `--architecture LLAMA`).
 
 **What this is:**
 - ✅ Pre-training (unsupervised learning on raw text)
@@ -118,13 +118,13 @@ This codebase supports both GPT-2 style and LLaMA architectures. Here are the ke
 
 ### How to Switch
 
-In `train.py`, simply change:
-```python
-MODEL_ARCHITECTURE = "GPT"   # For GPT-2 style
-MODEL_ARCHITECTURE = "LLAMA" # For LLaMA style
+Use the `--architecture` command-line argument:
+```bash
+uv run train.py --architecture GPT    # For GPT-2 style
+uv run train.py --architecture LLAMA  # For LLaMA style
 ```
 
-The code automatically selects the correct components based on this flag.
+The code automatically selects the correct components based on the architecture flag.
 
 ---
 
@@ -975,32 +975,46 @@ for _ in range(max_new_tokens):
 ### Training
 
 ```bash
-# Train the model
+# Train the model with default settings (GPT, small, einops, character tokenizer)
 uv run train.py
+
+# Train LLaMA model
+uv run train.py --architecture LLAMA
+
+# Train full-size GPT model
+uv run train.py --model_size full
+
+# Train with BPE tokenizer
+uv run train.py --tokenizer_type bpe
+
+# Train without einops
+uv run train.py --no_einops
+
+# Combine options
+uv run train.py --architecture LLAMA --model_size full --tokenizer_type bpe
 ```
 
+**Command-line Arguments**:
+- `--architecture`: Model architecture (`GPT` or `LLAMA`, default: `GPT`)
+- `--model_size`: Model size (`small` or `full`, default: `small`)
+- `--use_einops`: Use einops versions (default: True, use `--no_einops` to disable)
+- `--tokenizer_type`: Tokenizer type (`character`, `bpe`, or `sentencepiece`, default: `character`)
+- `--text_file`: Training data file (default: `training.txt`)
+
 **What happens**:
-1. Loads `training.txt`
+1. Loads training text file
 2. Creates tokenizer and dataset
-3. Initializes model
+3. Initializes model based on architecture and size
 4. Trains for specified epochs
 5. Saves checkpoints to `checkpoints/YYYYMMDDHHMMSS/` (timestamped folders)
 
-**Configuration**:
-- Edit `train.py` to change model size, architecture, etc.
-- Edit `training_args.py` to change hyperparameters
-
-**Tokenizer Selection**:
-You can choose between different tokenizers by setting `TOKENIZER_TYPE` in `train.py`:
-```python
-TOKENIZER_TYPE = "character"      # Character-level tokenization (simple, fast)
-TOKENIZER_TYPE = "bpe"            # Byte Pair Encoding (subword tokens)
-TOKENIZER_TYPE = "sentencepiece" # SentencePiece tokenization
-```
-
+**Tokenizer Types**:
 - **Character-level**: Each character is a token. Simple but large vocabulary.
 - **BPE**: Learns subword units. Good balance of vocabulary size and efficiency.
 - **SentencePiece**: Similar to BPE but handles whitespace differently. Often used in multilingual models.
+
+**Hyperparameters**:
+- Edit `training_args.py` to change training hyperparameters (learning rate, batch size, epochs, etc.)
 
 ### Inference
 
