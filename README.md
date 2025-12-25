@@ -1,4 +1,4 @@
-# LLM From Scratch
+# Build an LLM
 
 (This is a work-in-progress. Comments, corrections, etc., are very welcome!)
 
