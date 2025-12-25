@@ -1,6 +1,12 @@
-# LLM from Scratch: A Complete Implementation Guide
+# LLM From Scratch
 
-This repository contains a complete, educational implementation of GPT, LLaMA, and OLMo transformer models from scratch in PyTorch. It's designed for learning, with detailed explanations, shape annotations, and both "einops" and "without einops" versions of each component. Supports GPT-2, LLaMA, and OLMo architectures.
+(This is a work-in-progress. Comments, corrections, etc., are very welcome!)
+
+This repository contains a complete, educational implementation of transformer-based language models from scratch. It supports multiple custom architectures with detailed explanations, shape annotations, and both "einops" and "without einops" versions of each component (which use more standard PyTorch functions).
+
+The goal is twofold: you can pre-train an LLM from scratch using a simple, intuitive interface, and you can explore the codebase to understand the modularized building blocks of transformer models, with multiple implementation variants for each component.
+
+I built this project after learning from videos, books, and lecture notes by Andrej Karpathy, Neel Nanda, Sebastian Raschka, ARENA, Stanford's CS224N, 3Blue1Brown, and many others. My goal was to build a transformer-based LLM from scratch and create an intuitive interface to experiment with different architectures and configurations. I'm incredibly grateful to all those from whom I learned and borrowed ideas—this project wouldn't exist without their excellent educational content. I hope it can be useful to others on their own learning journey.
 
 ## Table of Contents
 
@@ -17,23 +23,15 @@ This repository contains a complete, educational implementation of GPT, LLaMA, a
 
 ## Project Overview
 
-This is a **pre-training** implementation - we train transformer models from scratch on text data using next-token prediction (autoregressive language modeling). The model learns general language patterns, grammar, and style from the training corpus.
-
-**Supported Architectures:**
-- **GPT-2 style**: Learned positional embeddings, LayerNorm, GELU activation
-- **LLaMA style**: RoPE (Rotary Position Embedding), RMSNorm, SwiGLU activation
-- **OLMo style**: ALiBi (Attention with Linear Biases), LayerNorm, SwiGLU activation
-
-Switch between architectures using the `--architecture` command-line argument in `train.py` (e.g., `--architecture LLAMA` or `--architecture OLMO`).
+This is a **pre-training** implementation. We train transformer models from scratch on text data using next-token prediction (autoregressive language modeling). The model learns general language patterns, grammar, and style from the training corpus.
 
 **What this is:**
 - ✅ Pre-training (unsupervised learning on raw text)
 - ✅ Next-token prediction (autoregressive language modeling)
-- ✅ Complete GPT architecture implementation
-- ✅ Complete LLaMA architecture implementation
-- ✅ Complete OLMo architecture implementation
+- ✅ Complete transformer architecture implementation
+- ✅ Support for multiple modern architectures (GPT, LLaMA, OLMo)
 - ✅ Educational codebase with detailed comments
-- ✅ Supports GPT, LLaMA, and OLMo via architecture flag
+- ✅ Architecture-agnostic design with configurable components
 
 **What this is NOT:**
 - ❌ Fine-tuning (task-specific adaptation)
@@ -49,7 +47,7 @@ Switch between architectures using the `--architecture` command-line argument in
 .
 ├── config.py              # Model architecture configuration (ModelConfig)
 ├── training_args.py        # Training hyperparameters (TransformerTrainingArgs)
-├── layernorm.py           # Layer normalization (3 versions: GPT style)
+├── layernorm.py           # Layer normalization (3 versions: GPT/OLMo style)
 ├── rmsnorm.py             # RMS normalization (2 versions: LLaMA style)
 ├── embed.py               # Token embeddings (2 versions)
 ├── positional_embedding.py # Positional embeddings (2 versions: GPT style)
@@ -72,11 +70,11 @@ Switch between architectures using the `--architecture` command-line argument in
 
 ## Architecture Comparison: GPT vs LLaMA vs OLMo
 
-This codebase supports GPT-2, LLaMA, and OLMo architectures. Here are the key differences:
+This codebase supports preset GPT, LLaMA, and OLMo architectures. Here are the key differences:
 
 ### Positional Encoding
 
-**GPT-2:**
+**GPT:**
 - **Learned positional embeddings**: Fixed embeddings for each position (0, 1, 2, ...)
 - Stored as `nn.Parameter` matrix `[n_ctx, d_model]`
 - Added directly to token embeddings: `final_emb = token_emb + pos_emb`
@@ -95,7 +93,7 @@ This codebase supports GPT-2, LLaMA, and OLMo architectures. Here are the key di
 
 ### Normalization
 
-**GPT-2:**
+**GPT:**
 - **LayerNorm**: Normalizes by subtracting mean, then scaling
 - Formula: `(x - mean) / std * γ + β`
 - Has both scale (γ) and bias (β) parameters
@@ -112,7 +110,7 @@ This codebase supports GPT-2, LLaMA, and OLMo architectures. Here are the key di
 
 ### Activation Function
 
-**GPT-2:**
+**GPT:**
 - **GELU** in MLP: `GELU(x) = x * Φ(x)` where Φ is CDF of standard normal
 - Uses 2 weight matrices: `W_in` and `W_out`
 
@@ -128,8 +126,8 @@ This codebase supports GPT-2, LLaMA, and OLMo architectures. Here are the key di
 
 ### Summary Table
 
-| Component | GPT-2 | LLaMA | OLMo |
-|-----------|-------|-------|------|
+| Component | GPT | LLaMA | OLMo |
+|-----------|-----|-------|------|
 | Positional Encoding | Learned embeddings | RoPE (rotary) | ALiBi (linear biases) |
 | Normalization | LayerNorm | RMSNorm | LayerNorm |
 | MLP Activation | GELU | SwiGLU | SwiGLU |
@@ -137,14 +135,18 @@ This codebase supports GPT-2, LLaMA, and OLMo architectures. Here are the key di
 
 ### How to Switch
 
-Use the `--architecture` command-line argument:
+This project is a **Streamlit web application**. To run it:
+
 ```bash
-uv run train.py --architecture GPT    # For GPT-2 style
-uv run train.py --architecture LLAMA  # For LLaMA style
-uv run train.py --architecture OLMO   # For OLMo style
+uv run --with streamlit streamlit run main.py
 ```
 
-The code automatically selects the correct components based on the architecture flag.
+Once the app is running, navigate to the **Training** page and use the architecture preset buttons:
+- **🚀 GPT-2**: Click to configure GPT-style architecture (Learned positional embeddings, LayerNorm, GELU)
+- **🦙 LLaMA**: Click to configure LLaMA-style architecture (RoPE, RMSNorm, SwiGLU)
+- **🔬 OLMo**: Click to configure OLMo-style architecture (ALiBi, LayerNorm, SwiGLU)
+
+The UI automatically selects the correct components (normalization, activation, positional encoding) based on the selected architecture preset. You can also manually customize individual components after selecting a preset.
 
 ---
 
@@ -219,7 +221,7 @@ output = einops.einsum(
 
 ### 1. Normalization Layers
 
-#### Layer Normalization (`layernorm.py`) - GPT Style
+#### Layer Normalization (`layernorm.py`) - GPT/OLMo Style
 
 **Purpose**: Normalize activations across the feature dimension to stabilize training.
 
@@ -639,7 +641,7 @@ Input → Linear(d_model → d_mlp) → GELU → Linear(d_mlp → d_model) → O
 
 Uses 2 weight matrices: `W_in` and `W_out`
 
-#### LLaMA Architecture (SwiGLU)
+#### LLaMA/OLMo Architecture (SwiGLU)
 
 ```
 Input → [Gate Branch: Linear → Swish] × [Up Branch: Linear] → Linear(d_mlp → d_model) → Output
@@ -683,12 +685,12 @@ output = einops.einsum(
 - Used in GPT, BERT, and modern transformers
 - Formula: `GELU(x) = x * Φ(x)` where Φ is CDF of standard normal
 
-**SwiGLU (LLaMA):**
+**SwiGLU (LLaMA/OLMo):**
 - **Swish activation**: `Swish(x) = x * sigmoid(x)` (also called SiLU)
 - **Gated architecture**: `SwiGLU(x) = Swish(W_gate @ x) * (W_up @ x)`
 - Element-wise multiplication gates the information flow
 - More expressive than GELU, allows model to control information flow
-- Used in LLaMA, PaLM, and other modern models
+- Used in LLaMA, PaLM, OLMo, and other modern models
 
 **Shape Flow (GELU):**
 ```
@@ -996,6 +998,7 @@ optimizer.step()
 - `d_mlp`: MLP hidden dimension (typically `4 * d_model`)
 - `n_ctx`: Context length (max sequence length)
 - `d_vocab`: Vocabulary size
+- `architecture`: Architecture type (GPT, LLaMA, or OLMo)
 
 #### `TransformerTrainingArgs` - Training Hyperparameters
 - `batch_size`: Number of sequences per batch
@@ -1070,10 +1073,52 @@ for _ in range(max_new_tokens):
 
 ## Usage Guide
 
+### Getting Started
+
+This project is a **Streamlit web application** that provides an interactive interface for training and inference.
+
+**Start the application:**
+```bash
+uv run --with streamlit streamlit run main.py
+```
+
+The app will open in your browser with the following pages:
+- **Main Page**: Overview and README
+- **Training Page**: Configure and train models with a visual interface
+- **Inference Page**: Generate text from trained models
+
 ### Training
 
+**Using the Streamlit UI (Recommended):**
+
+1. Start the app: `uv run --with streamlit streamlit run main.py`
+2. Navigate to the **Training** page
+3. Select an architecture preset:
+   - **🚀 GPT-2**: Learned positional embeddings, LayerNorm, GELU activation
+   - **🦙 LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation
+   - **🔬 OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation
+4. Configure model dimensions (or use size presets: small, medium, full)
+5. Upload training data or use the default `training.txt` file
+6. Set training hyperparameters (batch size, learning rate, epochs, etc.)
+7. Click "Start Training" to begin
+
+**What happens**:
+1. Loads training text file
+2. Creates tokenizer and dataset
+3. Initializes model based on selected architecture and configuration
+4. Trains for specified epochs with real-time loss visualization
+5. Saves checkpoints to `checkpoints/YYYYMMDDHHMMSS/` (timestamped folders)
+
+**Tokenizer Types**:
+- **Character-level**: Each character is a token. Simple but large vocabulary.
+- **BPE**: Learns subword units. Good balance of vocabulary size and efficiency.
+- **SentencePiece**: Similar to BPE but handles whitespace differently. Often used in multilingual models.
+
+**Command-line Training (Alternative):**
+
+You can also train models using the command-line script:
 ```bash
-# Train the model with default settings (GPT, small, einops, character tokenizer)
+# Train with default settings (GPT, small, einops, character tokenizer)
 uv run train.py
 
 # Train LLaMA model
@@ -1082,7 +1127,7 @@ uv run train.py --architecture LLAMA
 # Train OLMo model
 uv run train.py --architecture OLMO
 
-# Train full-size GPT model
+# Train full-size model
 uv run train.py --model_size full
 
 # Train with BPE tokenizer
@@ -1090,46 +1135,25 @@ uv run train.py --tokenizer_type bpe
 
 # Train without einops
 uv run train.py --no_einops
-
-# Combine options
-uv run train.py --architecture LLAMA --model_size full --tokenizer_type bpe
-uv run train.py --architecture OLMO --model_size small --tokenizer_type bpe
 ```
 
-**Command-line Arguments**:
-- `--architecture`: Model architecture (`GPT`, `LLAMA`, or `OLMO`, default: `GPT`)
-- `--model_size`: Model size (`small` or `full`, default: `small`)
-- `--use_einops`: Use einops versions (default: True, use `--no_einops` to disable)
-- `--tokenizer_type`: Tokenizer type (`character`, `bpe`, or `sentencepiece`, default: `character`)
-- `--text_file`: Training data file (default: `training.txt`)
-
-**What happens**:
-1. Loads training text file
-2. Creates tokenizer and dataset
-3. Initializes model based on architecture and size
-4. Trains for specified epochs
-5. Saves checkpoints to `checkpoints/YYYYMMDDHHMMSS/` (timestamped folders)
-
-**Tokenizer Types**:
-- **Character-level**: Each character is a token. Simple but large vocabulary.
-- **BPE**: Learns subword units. Good balance of vocabulary size and efficiency.
-- **SentencePiece**: Similar to BPE but handles whitespace differently. Often used in multilingual models.
-
-**Hyperparameters**:
-- Edit `training_args.py` to change training hyperparameters (learning rate, batch size, epochs, etc.)
-
 ### Inference
+
+**Using the Streamlit UI (Recommended):**
+
+1. Start the app: `uv run --with streamlit streamlit run main.py`
+2. Navigate to the **Inference** page
+3. Select a checkpoint from the dropdown (auto-scans `checkpoints/` directory)
+4. Enter a prompt
+5. Configure sampling parameters (temperature, top-k, top-p)
+6. Click "Generate" to create text
+
+**Command-line Inference (Alternative):**
 
 ```bash
 # Generate text from trained model
 uv run infer.py --checkpoint checkpoints/20240101120000/final_model.pt --prompt "First Citizen:"
 ```
-
-**What happens**:
-1. Loads model from checkpoint
-2. Automatically detects and loads the tokenizer type used during training (saved in checkpoint)
-3. Generates text from prompt
-4. Prints generated text
 
 **Options**:
 - `--checkpoint`: Path to model checkpoint (e.g., `checkpoints/20240101120000/final_model.pt`)
@@ -1222,6 +1246,8 @@ At each position, we predict what comes next.
 
 - [Attention Is All You Need](https://arxiv.org/abs/1706.03762) - Original transformer paper
 - [Language Models are Unsupervised Multitask Learners](https://d4mucfpksywv.cloudfront.net/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) - GPT-2 paper
+- [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/abs/2302.13971) - LLaMA paper
+- [OLMo: Accelerating the Science of Language Models](https://arxiv.org/abs/2402.00838) - OLMo paper
 - [Einops Documentation](https://einops.rocks/) - Learn more about einops
 - [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) - Visual explanation
 
@@ -1230,4 +1256,3 @@ At each position, we predict what comes next.
 ## License
 
 This is an educational repository. Feel free to use and modify for learning purposes.
-

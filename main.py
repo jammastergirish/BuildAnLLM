@@ -1,10 +1,11 @@
 
 import streamlit as st
-import torch
 import threading
 from pathlib import Path
+from collections import deque
 
-from config import ModelConfig
+from utils import get_device
+from model_loader import load_model_from_checkpoint
 
 
 # Page configuration
@@ -35,39 +36,10 @@ if "shared_loss_data" not in st.session_state:
     st.session_state.shared_loss_data = {
         "iterations": [], "train_losses": [], "val_losses": []}
 if "shared_training_logs" not in st.session_state:
-    from collections import deque
     st.session_state.shared_training_logs = deque(
         maxlen=200)  # Thread-safe deque
 if "training_lock" not in st.session_state:
     st.session_state.training_lock = threading.Lock()
-
-
-def _print_state_dict_warnings(unexpected_keys, missing_keys):
-    """Print warnings about state dict mismatches."""
-    if unexpected_keys:
-        print(f"Warning: {len(unexpected_keys)} unexpected key(s) in "
-              f"checkpoint (ignored):")
-        for key in unexpected_keys[:5]:  # Show first 5
-            print(f"  - {key}")
-        if len(unexpected_keys) > 5:
-            print(f"  ... and {len(unexpected_keys) - 5} more")
-
-    if missing_keys:
-        print(f"Warning: {len(missing_keys)} missing key(s) in checkpoint "
-              f"(using random initialization):")
-        for key in missing_keys[:5]:  # Show first 5
-            print(f"  - {key}")
-        if len(missing_keys) > 5:
-            print(f"  ... and {len(missing_keys) - 5} more")
-
-
-def get_device():
-    """Get the best available device."""
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    return torch.device("cpu")
 
 
 def scan_checkpoints():
@@ -99,95 +71,8 @@ def scan_checkpoints():
     return checkpoints
 
 
-def load_model_from_checkpoint(checkpoint_path: str, device: torch.device):
-    """Load model and config from checkpoint."""
-    from training_args import TransformerTrainingArgs
-    torch.serialization.add_safe_globals([TransformerTrainingArgs])
-    checkpoint = torch.load(
-        checkpoint_path, map_location=device, weights_only=False)
-
-    cfg = checkpoint.get("cfg")
-    if cfg is None:
-        cfg = ModelConfig.gpt_small()
-    elif isinstance(cfg, dict):
-        # Use from_dict to properly reconstruct enums
-        cfg = ModelConfig.from_dict(cfg)
-    elif isinstance(cfg, ModelConfig):
-        # Already a ModelConfig object (old format), use it directly
-        pass
-    else:
-        # Fallback: try to convert to dict and reconstruct
-        try:
-            from dataclasses import asdict
-            cfg_dict = asdict(cfg)
-            cfg = ModelConfig.from_dict(cfg_dict)
-        except Exception:
-            # Last resort: use default config
-            cfg = ModelConfig.gpt_small()
-
-    model_type = checkpoint.get("model_type", "with_einops")
-
-    if model_type == "with_einops":
-        from model import TransformerModelWithEinops
-        model = TransformerModelWithEinops(cfg)
-    else:
-        from model import TransformerModelWithoutEinops
-        model = TransformerModelWithoutEinops(cfg)
-
-    # Load state dict with strict=False to handle architecture differences
-    # (e.g., checkpoint has pos_embed but current model uses ROPE/ALIBI)
-    state_dict = checkpoint["model_state_dict"]
-    model_state_dict = dict(model.state_dict())
-
-    # Filter state_dict to only include keys that exist in current model
-    filtered_state_dict = {}
-    missing_keys = []
-    unexpected_keys = []
-
-    for key, value in state_dict.items():
-        if key in model_state_dict:
-            # Check if shapes match
-            if model_state_dict[key].shape == value.shape:
-                filtered_state_dict[key] = value
-            else:
-                shape_msg = (f"{key} (shape mismatch: {value.shape} vs "
-                             f"{model_state_dict[key].shape})")
-                unexpected_keys.append(shape_msg)
-        else:
-            unexpected_keys.append(key)
-
-    # Find missing keys
-    for key in model_state_dict:
-        if key not in filtered_state_dict:
-            missing_keys.append(key)
-
-    # Load the filtered state dict
-    model.load_state_dict(filtered_state_dict, strict=False)
-
-    # Warn about mismatches
-    _print_state_dict_warnings(unexpected_keys, missing_keys)
-
-    model = model.to(device)
-    model.eval()
-
-    return model, cfg, checkpoint
-
-
-# Main page - just show welcome message
-st.title("🤖 Transformer Training & Inference")
-st.markdown("""
-Welcome to the Transformer Training & Inference App!
-
-Use the sidebar to navigate to:
-- **🚂 Training**: Train transformer models (GPT, LLaMA, or OLMo) with live visualization
-- **🎯 Inference**: Generate text from trained models
-
-### Features
-- Upload your own training data or use the default file
-- Choose between GPT, LLaMA, and OLMo architectures
-- Real-time training progress with live loss graphs
-- Interactive text generation with customizable sampling parameters
-""")
+with open("README.md") as f:
+    st.markdown(f.read())
 
 # Store helper functions in session state for access by pages
 if "get_device" not in st.session_state:

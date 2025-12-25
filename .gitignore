@@ -2,3 +2,5 @@ checkpoints/
 *.pyc
 __pycache__/
 *.pt
+pages/.DS_Store
+.DS_Store

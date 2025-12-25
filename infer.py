@@ -5,120 +5,10 @@
 """Inference script for generating text from trained GPT models."""
 
 import argparse
-import torch
-from config import ModelConfig
-from model import TransformerModelWithEinops, TransformerModelWithoutEinops
 from tokenizer import CharacterTokenizer, BPETokenizer
 from sampler import TransformerSampler
-from training_args import TransformerTrainingArgs
-
-
-def _print_state_dict_warnings(unexpected_keys, missing_keys):
-    """Print warnings about state dict mismatches."""
-    if unexpected_keys:
-        print(f"Warning: {len(unexpected_keys)} unexpected key(s) in "
-              f"checkpoint (ignored):")
-        for key in unexpected_keys[:5]:  # Show first 5
-            print(f"  - {key}")
-        if len(unexpected_keys) > 5:
-            print(f"  ... and {len(unexpected_keys) - 5} more")
-
-    if missing_keys:
-        print(f"Warning: {len(missing_keys)} missing key(s) in checkpoint "
-              f"(using random initialization):")
-        for key in missing_keys[:5]:  # Show first 5
-            print(f"  - {key}")
-        if len(missing_keys) > 5:
-            print(f"  ... and {len(missing_keys) - 5} more")
-
-
-def load_model_from_checkpoint(checkpoint_path: str, device: torch.device):
-    """Load model and config from checkpoint.
-
-    Args:
-        checkpoint_path: Path to the checkpoint file
-        device: Device to load the model on
-
-    Returns:
-        Tuple of (model, config, checkpoint_dict)
-    """
-    print(f"Loading checkpoint from {checkpoint_path}...")
-    # Allowlist TransformerTrainingArgs for safe loading (PyTorch 2.6+)
-    torch.serialization.add_safe_globals([TransformerTrainingArgs])
-    checkpoint = torch.load(
-        checkpoint_path, map_location=device, weights_only=False)
-
-    # Get config from checkpoint
-    cfg = checkpoint.get("cfg")
-    if cfg is None:
-        # Fallback: use default config
-        print("Warning: No config in checkpoint, using default")
-        cfg = ModelConfig.gpt_small()
-    elif isinstance(cfg, dict):
-        # Use from_dict to properly reconstruct enums
-        cfg = ModelConfig.from_dict(cfg)
-    elif isinstance(cfg, ModelConfig):
-        # Already a ModelConfig object (old format), use it directly
-        pass
-    else:
-        # Fallback: try to convert to dict and reconstruct
-        try:
-            from dataclasses import asdict
-            cfg_dict = asdict(cfg)
-            cfg = ModelConfig.from_dict(cfg_dict)
-        except Exception:
-            # Last resort: use default config
-            print("Warning: Could not reconstruct config, using default")
-            cfg = ModelConfig.gpt_small()
-
-    # Determine model type from checkpoint or default
-    model_type = checkpoint.get("model_type", "with_einops")
-
-    # Initialize model
-    if model_type == "with_einops":
-        model = TransformerModelWithEinops(cfg)
-    else:
-        model = TransformerModelWithoutEinops(cfg)
-
-    # Load weights with handling for architecture differences
-    # (e.g., checkpoint has pos_embed but current model uses ROPE/ALIBI)
-    state_dict = checkpoint["model_state_dict"]
-    model_state_dict = dict(model.state_dict())
-
-    # Filter state_dict to only include keys that exist in current model
-    filtered_state_dict = {}
-    missing_keys = []
-    unexpected_keys = []
-
-    for key, value in state_dict.items():
-        if key in model_state_dict:
-            # Check if shapes match
-            if model_state_dict[key].shape == value.shape:
-                filtered_state_dict[key] = value
-            else:
-                shape_msg = (f"{key} (shape mismatch: {value.shape} vs "
-                             f"{model_state_dict[key].shape})")
-                unexpected_keys.append(shape_msg)
-        else:
-            unexpected_keys.append(key)
-
-    # Find missing keys
-    for key in model_state_dict:
-        if key not in filtered_state_dict:
-            missing_keys.append(key)
-
-    # Load the filtered state dict
-    model.load_state_dict(filtered_state_dict, strict=False)
-
-    # Warn about mismatches
-    _print_state_dict_warnings(unexpected_keys, missing_keys)
-
-    model = model.to(device)
-    model.eval()
-
-    param_count = sum(p.numel() for p in model.parameters()) / 1e6
-    print(f"Model loaded: {model_type}, {param_count:.2f}M parameters")
-    return model, cfg, checkpoint
+from model_loader import load_model_from_checkpoint
+from utils import get_device
 
 
 def main():
@@ -178,15 +68,16 @@ def main():
     args = parser.parse_args()
 
     # Device
-    device = torch.device(
-        "mps" if torch.backends.mps.is_available()
-        else "cuda" if torch.cuda.is_available()
-        else "cpu"
-    )
+    device = get_device()
     print(f"Using device: {device}")
 
     # Load model
+    print(f"Loading checkpoint from {args.checkpoint}...")
     model, _, checkpoint = load_model_from_checkpoint(args.checkpoint, device)
+
+    param_count = sum(p.numel() for p in model.parameters()) / 1e6
+    model_type = checkpoint.get("model_type", "with_einops")
+    print(f"Model loaded: {model_type}, {param_count:.2f}M parameters")
 
     # Get tokenizer type from checkpoint or args
     tokenizer_type = checkpoint.get("tokenizer_type")
