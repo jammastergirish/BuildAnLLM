@@ -9,10 +9,10 @@ import torch
 import os
 from datetime import datetime
 from config import ModelConfig
-from training_args import TransformerTrainingArgs
-from trainer import TransformerTrainer
-from dataset import TransformerDataset
-from model import TransformerModelWithEinops, TransformerModelWithoutEinops
+from pretraining.training.training_args import TransformerTrainingArgs
+from pretraining.training.trainer import TransformerTrainer
+from pretraining.data.dataset import TransformerDataset
+from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
 
 
 def main():
@@ -157,7 +157,7 @@ def main():
     print(f"Model saved to: {final_model_path}")
     print("\nTo generate text, run:")
     print(
-        f"  uv run infer.py --checkpoint {final_model_path} --prompt 'Your prompt here'")
+        f"  uv run cli/infer.py --checkpoint {final_model_path} --prompt 'Your prompt here'")
     print("\nNote: Tokenizer type is automatically detected from the checkpoint.")
 
 

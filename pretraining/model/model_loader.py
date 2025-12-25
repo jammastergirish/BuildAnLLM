@@ -3,8 +3,8 @@
 import torch
 from typing import Dict, Any, Tuple
 from config import ModelConfig
-from model import TransformerModelWithEinops, TransformerModelWithoutEinops
-from training_args import TransformerTrainingArgs
+from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
+from pretraining.training.training_args import TransformerTrainingArgs
 from utils import print_state_dict_warnings
 
 

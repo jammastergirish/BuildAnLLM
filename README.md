@@ -48,24 +48,45 @@ This is a **pre-training** implementation. We train transformer models from scra
 ```
 .
 ├── config.py              # Model architecture configuration (ModelConfig)
-├── training_args.py        # Training hyperparameters (TransformerTrainingArgs)
-├── layernorm.py           # Layer normalization (3 versions: GPT/OLMo style)
-├── rmsnorm.py             # RMS normalization (2 versions: LLaMA style)
-├── embed.py               # Token embeddings (2 versions)
-├── positional_embedding.py # Positional embeddings (2 versions: GPT style)
-├── rope.py                # Rotary Position Embedding (LLaMA style)
-├── alibi.py               # ALiBi - Attention with Linear Biases (OLMo style)
-├── attention.py           # Multi-head self-attention (2 versions, supports RoPE & ALiBi)
-├── mlp.py                 # Feedforward network (GELU & SwiGLU, 2 versions each)
-├── transformer_block.py    # Transformer block (2 versions, architecture-agnostic)
-├── model.py               # Full transformer model (GPT, LLaMA & OLMo, 2 versions each)
-├── tokenizer.py           # Tokenization (multiple types)
-├── dataset.py             # Dataset creation and splitting
-├── trainer.py             # Training loop and evaluation
-├── sampler.py             # Text generation and sampling
-├── train.py               # Main training script
-├── infer.py               # Inference script (loads from checkpoint)
-└── training.txt           # Training data
+├── main.py                # Streamlit application entry point
+├── training.txt           # Training data
+├── ui_components.py       # UI helper components
+├── utils.py               # Utility functions
+├── cli/                   # Command-line interfaces
+│   ├── train.py           # Training script
+│   └── infer.py           # Inference script
+├── pages/                 # Streamlit pages
+│   ├── 1_Training.py      # Training page UI
+│   └── 2_Inference.py     # Inference page UI
+├── pretraining/           # Pre-training components
+│   ├── attention/         # Multi-head self-attention
+│   │   └── attention.py   # Attention implementations (supports RoPE & ALiBi)
+│   ├── data/              # Dataset utilities
+│   │   └── dataset.py     # Dataset creation and splitting
+│   ├── embeddings/        # Token embeddings
+│   │   └── embed.py       # Embedding implementations
+│   ├── mlp/               # Feedforward networks
+│   │   └── mlp.py         # MLP implementations (GELU & SwiGLU)
+│   ├── model/             # Model definitions
+│   │   ├── model.py       # Full transformer model (GPT, LLaMA & OLMo)
+│   │   └── model_loader.py # Model loading utilities
+│   ├── normalization/     # Normalization layers
+│   │   ├── layernorm.py   # Layer normalization (GPT/OLMo style)
+│   │   └── rmsnorm.py     # RMS normalization (LLaMA style)
+│   ├── positional_embeddings/ # Positional encoding
+│   │   ├── positional_embedding.py # Learned embeddings (GPT style)
+│   │   ├── rope.py        # Rotary Position Embedding (LLaMA style)
+│   │   └── alibi.py       # ALiBi - Attention with Linear Biases (OLMo style)
+│   ├── tokenization/      # Tokenization
+│   │   └── tokenizer.py   # Tokenizer implementations (character, BPE, SentencePiece)
+│   ├── training/          # Training utilities
+│   │   ├── trainer.py     # Training loop and evaluation
+│   │   ├── training_args.py # Training hyperparameters
+│   │   └── training_ui.py # Training UI components
+│   └── transformer_blocks/ # Transformer blocks
+│       └── transformer_block.py # Transformer block implementations
+└── inference/             # Inference and text generation
+    └── sampler.py         # Text generation and sampling
 ```
 
 ---
@@ -223,7 +244,7 @@ output = einops.einsum(
 
 ### 1. Normalization Layers
 
-#### Layer Normalization (`layernorm.py`) - GPT/OLMo Style
+#### Layer Normalization (`pretraining/normalization/layernorm.py`) - GPT/OLMo Style
 
 **Purpose**: Normalize activations across the feature dimension to stabilize training.
 
@@ -279,7 +300,7 @@ Output: [batch, posn, d_model]  # After scale and shift
 
 ---
 
-#### RMS Normalization (`rmsnorm.py`) - LLaMA Style
+#### RMS Normalization (`pretraining/normalization/rmsnorm.py`) - LLaMA Style
 
 **Purpose**: Simpler normalization used in LLaMA (no mean subtraction, no bias).
 
@@ -315,7 +336,7 @@ Output: [batch, posn, d_model]  # After scale only
 
 ---
 
-### 2. Token Embeddings (`embed.py`)
+### 2. Token Embeddings (`pretraining/embeddings/embed.py`)
 
 **Purpose**: Convert token IDs (integers) into dense vector representations.
 
@@ -357,7 +378,7 @@ Output: [batch, position, d_model]  # e.g., [[emb[5], emb[10], emb[3]]]
 
 ### 3. Positional Encoding
 
-#### Learned Positional Embeddings (`positional_embedding.py`) - GPT Style
+#### Learned Positional Embeddings (`pretraining/positional_embeddings/positional_embedding.py`) - GPT Style
 
 **Purpose**: Add information about token positions in the sequence.
 
@@ -403,7 +424,7 @@ Repeat: [batch, seq_len, d_model]  # e.g., [32, 128, 256]
 - Positional embeddings encode "this token is at position 5"
 - Added to token embeddings: `final_emb = token_emb + pos_emb`
 
-#### Rotary Position Embedding (`rope.py`) - LLaMA Style
+#### Rotary Position Embedding (`pretraining/positional_embeddings/rope.py`) - LLaMA Style
 
 **Purpose**: Encode positions through rotations of query and key vectors (not learned, computed on-the-fly).
 
@@ -451,7 +472,7 @@ Rotate each pair: [batch, seq, n_heads, d_head/2, 2]
 Reshape back: [batch, seq, n_heads, d_head]
 ```
 
-#### ALiBi - Attention with Linear Biases (`alibi.py`) - OLMo Style
+#### ALiBi - Attention with Linear Biases (`pretraining/positional_embeddings/alibi.py`) - OLMo Style
 
 **Purpose**: Encode positions through linear biases added to attention scores (not learned, computed on-the-fly).
 
@@ -507,7 +528,7 @@ Softmax: [batch, n_heads, seq_len, seq_len]
 
 ---
 
-### 4. Multi-Head Self-Attention (`attention.py`)
+### 4. Multi-Head Self-Attention (`pretraining/attention/attention.py`)
 
 **Purpose**: Allow tokens to attend to other tokens in the sequence, learning relationships.
 
@@ -631,7 +652,7 @@ Final: [batch, seq, d_model]  (after projection)
 
 ---
 
-### 5. MLP / Feedforward Network (`mlp.py`)
+### 5. MLP / Feedforward Network (`pretraining/mlp/mlp.py`)
 
 **Purpose**: Apply pointwise non-linear transformations to each position independently.
 
@@ -713,7 +734,7 @@ Project: [batch, posn, d_model]  # e.g., [32, 128, 256]
 
 ---
 
-### 6. Transformer Block (`transformer_block.py`)
+### 6. Transformer Block (`pretraining/transformer_blocks/transformer_block.py`)
 
 **Purpose**: Combine attention and MLP with residual connections and layer normalization.
 
@@ -784,7 +805,7 @@ Output: [batch, posn, d_model]
 
 ---
 
-### 7. Full Transformer Model (`model.py`)
+### 7. Full Transformer Model (`pretraining/model/model.py`)
 
 **Purpose**: Stack all components into a complete language model supporting GPT, LLaMA, and OLMo architectures.
 
@@ -910,7 +931,7 @@ def forward(self, tokens):
 
 ## Training Pipeline
 
-### 1. Data Loading (`dataset.py`)
+### 1. Data Loading (`pretraining/data/dataset.py`)
 
 **Purpose**: Load text, tokenize, and create training sequences.
 
@@ -946,7 +967,7 @@ for i in range(len(data) - block_size):
 - At position `i`, we predict token at position `i+1`
 - This is autoregressive language modeling
 
-### 2. Training Loop (`trainer.py`)
+### 2. Training Loop (`pretraining/training/trainer.py`)
 
 **Purpose**: Train the model using gradient descent.
 
@@ -990,7 +1011,7 @@ optimizer.step()
 - Average loss over multiple random batches
 - Compare train vs val loss to detect overfitting
 
-### 3. Configuration (`config.py`, `training_args.py`)
+### 3. Configuration (`config.py`, `pretraining/training/training_args.py`)
 
 #### `ModelConfig` - Model Architecture
 - `d_model`: Hidden dimension (e.g., 256, 768)
@@ -1013,7 +1034,7 @@ optimizer.step()
 
 ## Inference and Sampling
 
-### Text Generation (`sampler.py`)
+### Text Generation (`inference/sampler.py`)
 
 **Purpose**: Generate text from a trained model.
 
@@ -1121,22 +1142,22 @@ The app will open in your browser with the following pages:
 You can also train models using the command-line script:
 ```bash
 # Train with default settings (GPT, small, einops, character tokenizer)
-uv run train.py
+uv run cli/train.py
 
 # Train LLaMA model
-uv run train.py --architecture LLAMA
+uv run cli/train.py --architecture LLAMA
 
 # Train OLMo model
-uv run train.py --architecture OLMO
+uv run cli/train.py --architecture OLMO
 
 # Train full-size model
-uv run train.py --model_size full
+uv run cli/train.py --model_size full
 
 # Train with BPE tokenizer
-uv run train.py --tokenizer_type bpe
+uv run cli/train.py --tokenizer_type bpe
 
 # Train without einops
-uv run train.py --no_einops
+uv run cli/train.py --no_einops
 ```
 
 ### Inference
@@ -1154,7 +1175,7 @@ uv run train.py --no_einops
 
 ```bash
 # Generate text from trained model
-uv run infer.py --checkpoint checkpoints/20240101120000/final_model.pt --prompt "First Citizen:"
+uv run cli/infer.py --checkpoint checkpoints/20240101120000/final_model.pt --prompt "First Citizen:"
 ```
 
 **Options**:

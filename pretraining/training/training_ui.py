@@ -6,7 +6,7 @@ import threading
 from typing import Dict, Any, List
 from collections import deque
 
-from trainer import TransformerTrainer
+from pretraining.training.trainer import TransformerTrainer
 
 
 def initialize_training_state():
@@ -48,7 +48,6 @@ def train_model_thread(
         max_iters = trainer.max_iters
         eval_interval = trainer.eval_interval
         print_interval = getattr(trainer, 'print_interval', 100)
-        update_interval = 10
 
         _log_training_start(trainer, shared_logs, lock, eval_interval)
 
@@ -60,7 +59,8 @@ def train_model_thread(
                 break
 
             # Training step
-            loss, running_loss = _training_step(trainer, iter_num, first_loss_set)
+            loss, running_loss = _training_step(
+                trainer, iter_num, first_loss_set)
             if not first_loss_set:
                 trainer.running_loss = loss.item()
                 first_loss_set = True
@@ -72,16 +72,16 @@ def train_model_thread(
                 "avg_loss": f"{trainer.running_loss:.4f}",
             })
 
-            _update_progress(progress_data, iter_num, loss.item(), 
-                          trainer.running_loss, max_iters, lock)
+            _update_progress(progress_data, iter_num, loss.item(),
+                             trainer.running_loss, max_iters, lock)
 
             if iter_num % print_interval == 0 and iter_num > 0:
-                _log_iteration(iter_num, loss.item(), trainer.running_loss, 
-                             shared_logs, lock)
+                _log_iteration(iter_num, loss.item(), trainer.running_loss,
+                               shared_logs, lock)
 
             if (iter_num > 0 and iter_num % eval_interval == 0) or iter_num == max_iters - 1:
-                _evaluate_and_log(trainer, iter_num, shared_loss_data, 
-                                shared_logs, progress_data, lock, pbar)
+                _evaluate_and_log(trainer, iter_num, shared_loss_data,
+                                  shared_logs, progress_data, lock, pbar)
 
             if (hasattr(trainer.args, "save_interval") and
                     iter_num % trainer.args.save_interval == 0 and iter_num > 0):
@@ -89,8 +89,8 @@ def train_model_thread(
                 _log_checkpoint_saved(iter_num, shared_logs, lock)
 
         pbar.close()
-        _finalize_training(trainer, max_iters, training_active_flag, 
-                         shared_logs, progress_data, lock)
+        _finalize_training(trainer, max_iters, training_active_flag,
+                           shared_logs, progress_data, lock)
 
     except Exception as e:
         import traceback
@@ -104,8 +104,10 @@ def train_model_thread(
 def _log_training_start(trainer, shared_logs, lock, eval_interval):
     """Log training start information."""
     print("\nStarting training...")
-    print(f"Training for {trainer.args.epochs} epochs, {trainer.max_iters} total iterations")
-    print(f"Batch size: {trainer.args.batch_size}, Learning rate: {trainer.args.lr}")
+    print(
+        f"Training for {trainer.args.epochs} epochs, {trainer.max_iters} total iterations")
+    print(
+        f"Batch size: {trainer.args.batch_size}, Learning rate: {trainer.args.lr}")
     print(f"Weight decay: {trainer.args.weight_decay}")
     print(f"Evaluating every {eval_interval} iterations\n")
 
@@ -147,14 +149,15 @@ def _training_step(trainer, iter_num, first_loss_set):
         running_loss = loss.item()
     else:
         running_loss = (trainer.loss_alpha * trainer.running_loss +
-                       (1 - trainer.loss_alpha) * loss.item())
+                        (1 - trainer.loss_alpha) * loss.item())
 
     return loss, running_loss
 
 
 def _update_progress(progress_data, iter_num, loss, running_loss, max_iters, lock):
     """Update progress data."""
-    should_update = (iter_num % 10 == 0 or iter_num == max_iters - 1 or iter_num == 0)
+    should_update = (iter_num % 10 == 0 or iter_num ==
+                     max_iters - 1 or iter_num == 0)
     if should_update:
         with lock:
             progress_data["iter"] = iter_num
@@ -164,7 +167,8 @@ def _update_progress(progress_data, iter_num, loss, running_loss, max_iters, loc
             if "all_losses" in progress_data:
                 progress_data["all_losses"]["iterations"].append(iter_num)
                 progress_data["all_losses"]["current_losses"].append(loss)
-                progress_data["all_losses"]["running_losses"].append(running_loss)
+                progress_data["all_losses"]["running_losses"].append(
+                    running_loss)
 
 
 def _log_iteration(iter_num, loss, running_loss, shared_logs, lock):
@@ -175,8 +179,8 @@ def _log_iteration(iter_num, loss, running_loss, shared_logs, lock):
         shared_logs.append(msg)
 
 
-def _evaluate_and_log(trainer, iter_num, shared_loss_data, shared_logs, 
-                     progress_data, lock, pbar):
+def _evaluate_and_log(trainer, iter_num, shared_loss_data, shared_logs,
+                      progress_data, lock, pbar):
     """Evaluate and log results."""
     losses = trainer.estimate_loss()
     print(f"\n[Iter {iter_num}] Train loss: {losses['train']:.4f}, "
@@ -205,8 +209,8 @@ def _log_checkpoint_saved(iter_num, shared_logs, lock):
         shared_logs.append(msg)
 
 
-def _finalize_training(trainer, max_iters, training_active_flag, 
-                      shared_logs, progress_data, lock):
+def _finalize_training(trainer, max_iters, training_active_flag,
+                       shared_logs, progress_data, lock):
     """Finalize training and save results."""
     print("\nTraining complete!")
     print(f"Final running average loss: {trainer.running_loss:.4f}")
@@ -217,9 +221,10 @@ def _finalize_training(trainer, max_iters, training_active_flag,
             trainer.save_checkpoint(trainer.max_iters, is_final=True)
             trainer.save_loss_graph()
             shared_logs.append("Training complete!")
-            shared_logs.append(f"Final running average loss: {trainer.running_loss:.4f}")
+            shared_logs.append(
+                f"Final running average loss: {trainer.running_loss:.4f}")
         training_active_flag[0] = False
         progress_data["iter"] = max_iters - 1
         progress_data["progress"] = 1.0
-        shared_logs.append(f"Final progress: {progress_data['progress']*100:.1f}%")
-
+        shared_logs.append(
+            f"Final progress: {progress_data['progress']*100:.1f}%")

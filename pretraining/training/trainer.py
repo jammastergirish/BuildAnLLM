@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import os
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-from training_args import TransformerTrainingArgs
+from pretraining.training.training_args import TransformerTrainingArgs
 
 
 class TransformerTrainer:
@@ -253,3 +253,4 @@ class TransformerTrainer:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         print(f"Checkpoint loaded from {filepath}")
         return checkpoint
+

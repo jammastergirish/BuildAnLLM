@@ -104,9 +104,9 @@ def create_norm_layer(cfg, use_einops=True):
 
     if cfg.normalization == Normalization.RMSNORM:
         if use_einops:
-            from rmsnorm import RMSNormWithEinops
+            from pretraining.normalization.rmsnorm import RMSNormWithEinops
             return RMSNormWithEinops(cfg)
-        from rmsnorm import RMSNormWithoutEinops
+        from pretraining.normalization.rmsnorm import RMSNormWithoutEinops
         return RMSNormWithoutEinops(cfg)
     # LAYERNORM
     if use_einops:

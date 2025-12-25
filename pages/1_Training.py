@@ -9,11 +9,11 @@ import plotly.graph_objects as go
 import pandas as pd
 
 from config import ModelConfig, Architecture, PositionalEncoding, Normalization, Activation
-from training_args import TransformerTrainingArgs
-from trainer import TransformerTrainer
-from dataset import TransformerDataset
-from model import TransformerModelWithEinops, TransformerModelWithoutEinops
-from training_ui import initialize_training_state, train_model_thread
+from pretraining.training.training_args import TransformerTrainingArgs
+from pretraining.training.trainer import TransformerTrainer
+from pretraining.data.dataset import TransformerDataset
+from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
+from pretraining.training.training_ui import initialize_training_state, train_model_thread
 from ui_components import render_model_config_ui
 
 

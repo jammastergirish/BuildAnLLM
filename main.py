@@ -7,7 +7,7 @@ from pathlib import Path
 import streamlit as st
 
 from utils import get_device
-from model_loader import load_model_from_checkpoint
+from pretraining.model.model_loader import load_model_from_checkpoint
 
 
 # Page configuration

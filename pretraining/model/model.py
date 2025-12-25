@@ -3,11 +3,11 @@ import torch.nn as nn
 from jaxtyping import Float, Int
 from torch import Tensor
 from config import Architecture, PositionalEncoding
-from embed import EmbedWithoutTorch, EmbedWithTorch, UnembedWithoutTorch, UnembedWithTorch
-from positional_embedding import PosEmbedWithEinops, PosEmbedWithoutEinops
-from transformer_block import create_transformer_block
-from layernorm import create_norm_layer
-from rope import RoPE
+from pretraining.embeddings.embed import EmbedWithoutTorch, EmbedWithTorch, UnembedWithoutTorch, UnembedWithTorch
+from pretraining.positional_embeddings.positional_embedding import PosEmbedWithEinops, PosEmbedWithoutEinops
+from pretraining.transformer_blocks.transformer_block import create_transformer_block
+from pretraining.normalization.layernorm import create_norm_layer
+from pretraining.positional_embeddings.rope import RoPE
 
 
 class TransformerModelWithEinops(nn.Module):
@@ -34,7 +34,7 @@ class TransformerModelWithEinops(nn.Module):
 
         # ALiBi (for ALIBI positional encoding)
         if cfg.positional_encoding == PositionalEncoding.ALIBI:
-            from alibi import ALiBi
+            from pretraining.positional_embeddings.alibi import ALiBi
             self.alibi = ALiBi(cfg)
         else:
             self.alibi = None
@@ -108,7 +108,7 @@ class TransformerModelWithoutEinops(nn.Module):
 
         # ALiBi (for ALIBI positional encoding)
         if cfg.positional_encoding == PositionalEncoding.ALIBI:
-            from alibi import ALiBi
+            from pretraining.positional_embeddings.alibi import ALiBi
             self.alibi = ALiBi(cfg)
         else:
             self.alibi = None
@@ -161,3 +161,4 @@ class TransformerModelWithoutEinops(nn.Module):
 # Backward compatibility aliases
 GPTWithEinops = TransformerModelWithEinops
 GPTWithoutEinops = TransformerModelWithoutEinops
+

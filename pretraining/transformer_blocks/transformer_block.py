@@ -1,9 +1,9 @@
 from torch import nn
 from jaxtyping import Float
 from torch import Tensor
-from attention import AttentionWithEinops, AttentionWithoutEinops
-from mlp import create_mlp_layer
-from layernorm import create_norm_layer
+from pretraining.attention.attention import AttentionWithEinops, AttentionWithoutEinops
+from pretraining.mlp.mlp import create_mlp_layer
+from pretraining.normalization.layernorm import create_norm_layer
 
 
 class TransformerBlockWithEinops(nn.Module):

@@ -11,3 +11,4 @@ class TransformerTrainingArgs:
     save_dir: str = "checkpoints"
     save_interval: int = 1000  # Save checkpoint every N iterations
     eval_iters: int = 200  # Number of iterations for evaluation
+

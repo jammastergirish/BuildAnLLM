@@ -5,9 +5,9 @@
 """Inference script for generating text from trained GPT models."""
 
 import argparse
-from tokenizer import CharacterTokenizer, BPETokenizer
-from sampler import TransformerSampler
-from model_loader import load_model_from_checkpoint
+from pretraining.tokenization.tokenizer import CharacterTokenizer, BPETokenizer
+from inference.sampler import TransformerSampler
+from pretraining.model.model_loader import load_model_from_checkpoint
 from utils import get_device
 
 

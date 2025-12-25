@@ -144,3 +144,4 @@ class SentencePieceTokenizer:
     def decode_tensor(self, tokens: torch.Tensor) -> str:
         """Convert tensor of token IDs back to text"""
         return self.decode(tokens.tolist())
+

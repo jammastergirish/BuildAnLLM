@@ -11,9 +11,9 @@ from collections import defaultdict
 # Add parent directory to path to import from main
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from model import TransformerModelWithEinops, TransformerModelWithoutEinops
-from tokenizer import CharacterTokenizer, BPETokenizer, SentencePieceTokenizer
-from sampler import TransformerSampler
+from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
+from pretraining.tokenization.tokenizer import CharacterTokenizer, BPETokenizer, SentencePieceTokenizer
+from inference.sampler import TransformerSampler
 
 
 def parse_timestamp(timestamp_str):

@@ -1,7 +1,7 @@
 import torch
 from typing import Tuple
 from config import ModelConfig
-from tokenizer import (
+from pretraining.tokenization.tokenizer import (
     CharacterTokenizer,
     CharacterTokenizerWithTorch,
     BPETokenizer,
@@ -109,3 +109,4 @@ class TransformerDataset:
         print(
             f"Train: {len(self.X_train)} sequences, Val: {len(self.X_val)} sequences"
         )
+
