@@ -48,7 +48,7 @@ if "shared_loss_data" not in st.session_state:
         "iterations": [], "train_losses": [], "val_losses": []}
 if "shared_training_logs" not in st.session_state:
     st.session_state.shared_training_logs = deque(
-        maxlen=100)  # Thread-safe deque
+        maxlen=200)  # Thread-safe deque
 if "training_lock" not in st.session_state:
     st.session_state.training_lock = threading.Lock()
 
@@ -119,13 +119,44 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device):
     return model, cfg, checkpoint
 
 
-def train_model_thread(trainer, shared_loss_data, shared_logs, training_active_flag, lock):
+def train_model_thread(trainer, shared_loss_data, shared_logs, training_active_flag, lock, progress_data):
     """Training thread that updates shared data structures (thread-safe)."""
     try:
+        from tqdm import tqdm
+
         max_iters = trainer.max_iters
         eval_interval = trainer.eval_interval
+        print_interval = getattr(trainer, 'print_interval', 100)
+        update_interval = 10  # Update progress every 10 iterations for smoother UI
 
-        for iter_num in range(max_iters):
+        # Initial log
+        print("\nStarting training...")
+        print(
+            f"Training for {trainer.args.epochs} epochs, {max_iters} total iterations")
+        print(
+            f"Batch size: {trainer.args.batch_size}, Learning rate: {trainer.args.lr}")
+        print(f"Weight decay: {trainer.args.weight_decay}")
+        print(f"Evaluating every {eval_interval} iterations\n")
+
+        with lock:
+            shared_logs.append("Starting training...")
+            shared_logs.append(
+                f"Training for {trainer.args.epochs} epochs, {max_iters} total iterations"
+            )
+            shared_logs.append(
+                f"Batch size: {trainer.args.batch_size}, Learning rate: {trainer.args.lr}"
+            )
+            shared_logs.append(f"Weight decay: {trainer.args.weight_decay}")
+            shared_logs.append(
+                f"Evaluating every {eval_interval} iterations\n")
+
+        # Create tqdm progress bar for console output
+        pbar = tqdm(range(max_iters), desc="Training")
+
+        # Initialize running_loss with None to set it on first iteration
+        first_loss_set = False
+
+        for iter_num in pbar:
             # Check if training should stop (thread-safe check)
             with lock:
                 if not training_active_flag[0]:
@@ -147,38 +178,117 @@ def train_model_thread(trainer, shared_loss_data, shared_logs, training_active_f
             loss.backward()
             trainer.optimizer.step()
 
-            trainer.running_loss = (
-                trainer.loss_alpha * trainer.running_loss
-                + (1 - trainer.loss_alpha) * loss.item()
-            )
+            # Initialize running_loss with first loss value for better starting point
+            if not first_loss_set:
+                trainer.running_loss = loss.item()
+                first_loss_set = True
+            else:
+                trainer.running_loss = (
+                    trainer.loss_alpha * trainer.running_loss
+                    + (1 - trainer.loss_alpha) * loss.item()
+                )
+
+            # Update tqdm progress bar (console output)
+            pbar.set_postfix({
+                "loss": f"{loss.item():.4f}",
+                "avg_loss": f"{trainer.running_loss:.4f}",
+            })
+
+            # Update progress data frequently (every update_interval iterations)
+            # Always update on last iteration to ensure 100% progress
+            should_update_progress = (iter_num % update_interval == 0 or
+                                      iter_num == max_iters - 1 or
+                                      iter_num == 0)
+            if should_update_progress:
+                with lock:
+                    progress_data["iter"] = iter_num
+                    progress_data["loss"] = loss.item()
+                    progress_data["running_loss"] = trainer.running_loss
+                    # Calculate progress: (iter_num + 1) / max_iters ensures we reach 100% on last iteration
+                    progress_data["progress"] = min(
+                        (iter_num + 1) / max_iters, 1.0)
+                    # Track all losses for comprehensive graph
+                    if "all_losses" in progress_data:
+                        progress_data["all_losses"]["iterations"].append(
+                            iter_num)
+                        progress_data["all_losses"]["current_losses"].append(
+                            loss.item())
+                        progress_data["all_losses"]["running_losses"].append(
+                            trainer.running_loss)
+
+            # Print detailed loss periodically (like original trainer)
+            if iter_num % print_interval == 0 and iter_num > 0:
+                print(
+                    f"\n[Iter {iter_num}] Current loss: {loss.item():.4f}, "
+                    f"Running avg: {trainer.running_loss:.4f}"
+                )
+                with lock:
+                    shared_logs.append(
+                        f"[Iter {iter_num}] Current loss: {loss.item():.4f}, "
+                        f"Running avg: {trainer.running_loss:.4f}"
+                    )
 
             # Evaluate at intervals
             if (iter_num > 0 and iter_num % eval_interval == 0) or iter_num == max_iters - 1:
                 losses = trainer.estimate_loss()
+                print(
+                    f"\n[Iter {iter_num}] Train loss: {losses['train']:.4f}, "
+                    f"Val loss: {losses['val']:.4f}"
+                )
+                # Update tqdm with eval metrics
+                pbar.set_postfix({
+                    "loss": f"{loss.item():.4f}",
+                    "avg_loss": f"{trainer.running_loss:.4f}",
+                    "val_loss": f"{losses['val']:.4f}",
+                })
                 # Thread-safe update
                 with lock:
                     shared_loss_data["iterations"].append(iter_num)
                     shared_loss_data["train_losses"].append(losses['train'])
                     shared_loss_data["val_losses"].append(losses['val'])
                     shared_logs.append(
-                        f"[Iter {iter_num}] Train: {losses['train']:.4f}, Val: {losses['val']:.4f}"
+                        f"[Iter {iter_num}] Train loss: {losses['train']:.4f}, "
+                        f"Val loss: {losses['val']:.4f}"
                     )
+                    # Also update progress with val loss
+                    progress_data["val_loss"] = losses['val']
 
             # Save checkpoint
             if (hasattr(trainer.args, "save_interval") and
                     iter_num % trainer.args.save_interval == 0 and iter_num > 0):
                 trainer.save_checkpoint(iter_num)
+                print(f"Checkpoint saved at iteration {iter_num}")
+                with lock:
+                    shared_logs.append(
+                        f"Checkpoint saved at iteration {iter_num}")
 
-        # Final save
+        # Close tqdm progress bar
+        pbar.close()
+
+        # Final save - loop completed normally
+        print("\nTraining complete!")
+        print(f"Final running average loss: {trainer.running_loss:.4f}")
+
         with lock:
             if training_active_flag[0]:
+                # Training completed all iterations
+                shared_logs.append(f"Completed all {max_iters} iterations!")
                 trainer.save_checkpoint(trainer.max_iters, is_final=True)
                 trainer.save_loss_graph()
                 shared_logs.append("Training complete!")
+                shared_logs.append(
+                    f"Final running average loss: {trainer.running_loss:.4f}")
             training_active_flag[0] = False
+            # Ensure progress is exactly 100%
+            progress_data["iter"] = max_iters - 1
+            progress_data["progress"] = 1.0
+            shared_logs.append(
+                f"Final progress: {progress_data['progress']*100:.1f}%")
     except Exception as e:
+        import traceback
         with lock:
             shared_logs.append(f"Error during training: {str(e)}")
+            shared_logs.append(traceback.format_exc())
             training_active_flag[0] = False
 
 
@@ -262,10 +372,10 @@ if page == "Training":
 
     with col1:
         start_training = st.button(
-            "🚀 Start Training", type="primary", use_container_width=True)
+            "🚀 Start Training", type="primary", width='stretch')
 
     with col2:
-        stop_training = st.button("⏹️ Stop Training", use_container_width=True)
+        stop_training = st.button("⏹️ Stop Training", width='stretch')
 
     if stop_training and st.session_state.training_active:
         with st.session_state.training_lock:
@@ -348,12 +458,26 @@ if page == "Training":
             # Reset loss data (use shared thread-safe structures)
             st.session_state.shared_loss_data = {
                 "iterations": [], "train_losses": [], "val_losses": []}
-            st.session_state.shared_training_logs = deque(maxlen=100)
+            st.session_state.shared_training_logs = deque(maxlen=200)
             st.session_state.training_active = True
             st.session_state.trainer = trainer
 
             # Create a mutable flag for thread-safe access
             training_active_flag = [True]
+
+            # Progress data for real-time updates
+            progress_data = {
+                "iter": 0,
+                "loss": 0.0,
+                "running_loss": 0.0,
+                "val_loss": None,
+                "progress": 0.0,
+                "all_losses": {
+                    "iterations": [],
+                    "current_losses": [],
+                    "running_losses": []
+                }
+            }
 
             # Start training thread with thread-safe data structures
             thread = threading.Thread(
@@ -363,13 +487,15 @@ if page == "Training":
                     st.session_state.shared_loss_data,
                     st.session_state.shared_training_logs,
                     training_active_flag,
-                    st.session_state.training_lock
+                    st.session_state.training_lock,
+                    progress_data
                 ),
                 daemon=True
             )
             thread.start()
             st.session_state.training_thread = thread
             st.session_state.training_active_flag = training_active_flag
+            st.session_state.progress_data = progress_data
 
             st.success("Training started! Check the visualization below.")
             time.sleep(0.5)  # Give thread a moment to start
@@ -383,15 +509,40 @@ if page == "Training":
             st.success("✅ Training completed!")
 
     if st.session_state.training_active:
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.info("🔄 Training in progress...")
-        with col2:
-            if st.button("🔄 Refresh View", use_container_width=True):
-                st.rerun()
+        # st.info("🔄 Training in progress... (Auto-refreshing every 2 seconds)")
 
-        # Live loss graph
-        st.header("📊 Training Progress")
+        # Real-time progress bar and metrics
+        if "progress_data" in st.session_state:
+            progress_data = st.session_state.progress_data
+            with st.session_state.training_lock:
+                # Thread-safe read
+                current_iter = progress_data.get("iter", 0)
+                current_loss = progress_data.get("loss", 0.0)
+                running_loss = progress_data.get("running_loss", 0.0)
+                val_loss = progress_data.get("val_loss")
+                progress = progress_data.get("progress", 0.0)
+
+            st.header("📊 Training Progress")
+
+            # Progress bar
+            st.progress(
+                progress, text=f"Iteration {current_iter} / {st.session_state.trainer.max_iters if st.session_state.trainer else '?'}")
+
+            # Real-time metrics
+            metric_cols = st.columns(4)
+            with metric_cols[0]:
+                st.metric("Current Loss", f"{current_loss:.4f}")
+            with metric_cols[1]:
+                st.metric("Running Avg", f"{running_loss:.4f}")
+            with metric_cols[2]:
+                if val_loss is not None:
+                    st.metric("Val Loss", f"{val_loss:.4f}")
+                else:
+                    st.metric("Val Loss", "Pending...")
+            with metric_cols[3]:
+                st.metric("Progress", f"{progress*100:.1f}%")
+        else:
+            st.header("📊 Training Progress")
 
         # Copy from shared data to display (thread-safe read)
         with st.session_state.training_lock:
@@ -401,12 +552,59 @@ if page == "Training":
                 "val_losses": list(st.session_state.shared_loss_data["val_losses"])
             }
             training_logs = list(st.session_state.shared_training_logs)
+            # Get all losses data if available
+            all_losses_data = None
+            if "progress_data" in st.session_state and "all_losses" in st.session_state.progress_data:
+                all_losses_data = {
+                    "iterations": list(st.session_state.progress_data["all_losses"]["iterations"]),
+                    "current_losses": list(st.session_state.progress_data["all_losses"]["current_losses"]),
+                    "running_losses": list(st.session_state.progress_data["all_losses"]["running_losses"])
+                }
 
         # Also update session state for persistence
         st.session_state.loss_data = loss_data
         st.session_state.training_logs = training_logs
+        if all_losses_data:
+            st.session_state.all_losses_data = all_losses_data
 
+        # Graph 1: All losses (current and running average) - updates every 10 iterations
+        if all_losses_data and len(all_losses_data["iterations"]) > 0:
+            st.subheader("📈 All Losses (Real-time)")
+            df_all = pd.DataFrame({
+                "Iteration": all_losses_data["iterations"],
+                "Current Loss": all_losses_data["current_losses"],
+                "Running Avg Loss": all_losses_data["running_losses"]
+            })
+
+            fig_all = go.Figure()
+            fig_all.add_trace(go.Scatter(
+                x=df_all["Iteration"],
+                y=df_all["Current Loss"],
+                mode="lines",
+                name="Current Loss",
+                line=dict(color="orange", width=1),
+                opacity=0.7
+            ))
+            fig_all.add_trace(go.Scatter(
+                x=df_all["Iteration"],
+                y=df_all["Running Avg Loss"],
+                mode="lines",
+                name="Running Avg Loss",
+                line=dict(color="purple", width=2)
+            ))
+            fig_all.update_layout(
+                title="All Training Losses (updated every 10 iterations)",
+                xaxis_title="Iteration",
+                yaxis_title="Loss",
+                hovermode="x unified",
+                height=400,
+                yaxis={"range": [0, None]}  # Always start y-axis at 0
+            )
+            st.plotly_chart(fig_all, width='stretch')
+
+        # Graph 2: Evaluation losses (train/val) - updates at evaluation intervals
         if loss_data["iterations"]:
+            st.subheader("📊 Evaluation Losses (Train/Val)")
             df = pd.DataFrame({
                 "Iteration": loss_data["iterations"],
                 "Train Loss": loss_data["train_losses"],
@@ -429,29 +627,43 @@ if page == "Training":
                 line=dict(color="red")
             ))
             fig.update_layout(
-                title="Training and Validation Loss",
+                title="Training and Validation Loss (evaluated every 500 iterations)",
                 xaxis_title="Iteration",
                 yaxis_title="Loss",
-                hovermode="x unified"
+                hovermode="x unified",
+                height=400
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
-            # Note about auto-refresh
-            st.caption(
-                "💡 Tip: Click 'Refresh View' above to update the graph, or wait for auto-refresh.")
+            # Auto-refresh note
+            st.caption("💡 Page auto-refreshes every 2 seconds while training.")
+
+            # Auto-refresh while training
+            if st.session_state.training_active:
+                time.sleep(2)
+                st.rerun()
         else:
             if st.session_state.training_active:
-                st.info("⏳ Waiting for first evaluation... This may take a moment.")
-                st.caption(
-                    "💡 Click 'Refresh View' above to check for updates.")
+                st.info("⏳ Waiting for first evaluation (at the 500th iteration).")
+                # Auto-refresh while waiting
+                time.sleep(2)
+                st.rerun()
 
-        # Training logs
+        # Training logs (like console output)
         if training_logs:
-            st.header("📝 Training Logs")
-            with st.expander("View Logs", expanded=True):
-                # Show last 20 logs
-                for log in training_logs[-20:]:
-                    st.text(log)
+            st.header("📝 Training Logs (Console Output)")
+            # Show logs in a scrollable container
+            with st.expander("View All Logs", expanded=True):
+                # Show all logs (they're already limited by deque maxlen=200)
+                log_text = "\n".join(training_logs)
+                st.text_area(
+                    "Logs",
+                    value=log_text,
+                    height=400,
+                    label_visibility="collapsed",
+                    disabled=True
+                )
+            st.caption(f"Showing {len(training_logs)} log entries")
     else:
         if st.session_state.loss_data["iterations"]:
             st.header("📊 Final Training Results")
@@ -482,7 +694,7 @@ if page == "Training":
                 yaxis_title="Loss",
                 hovermode="x unified"
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
 elif page == "Inference":
     st.title("🎯 Inference")
@@ -620,7 +832,7 @@ elif page == "Inference":
 
             # Generate button
             generate = st.button(
-                "✨ Generate Text", type="primary", use_container_width=True)
+                "✨ Generate Text", type="primary", width='stretch')
 
             if generate:
                 with st.spinner("Generating text..."):
