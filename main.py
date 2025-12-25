@@ -1,8 +1,10 @@
 
-import streamlit as st
+import re
 import threading
-from pathlib import Path
 from collections import deque
+from pathlib import Path
+
+import streamlit as st
 
 from utils import get_device
 from model_loader import load_model_from_checkpoint
@@ -71,8 +73,10 @@ def scan_checkpoints():
     return checkpoints
 
 
-with open("README.md") as f:
-    st.markdown(f.read())
+with open("README.md", encoding="utf-8") as f:
+    content = f.read()
+    content = re.sub(r'<img[^>]*>', '', content)
+    st.markdown(content)
 
 # Store helper functions in session state for access by pages
 if "get_device" not in st.session_state:
