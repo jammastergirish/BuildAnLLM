@@ -2,6 +2,8 @@
 
 (This is a work-in-progress. Comments, corrections, etc., are very welcome!)
 
+<img width="847" height="660" alt="Screenshot 2025-12-24 at 20 57 51" src="https://github.com/user-attachments/assets/2fbb32ac-45bd-4b27-9321-79dc65e14242" />
+
 This repository contains a complete, educational implementation of transformer-based language models from scratch. It supports multiple custom architectures with detailed explanations, shape annotations, and both "einops" and "without einops" versions of each component (which use more standard PyTorch functions).
 
 The goal is twofold: you can pre-train an LLM from scratch using a simple, intuitive interface, and you can explore the codebase to understand the modularized building blocks of transformer models, with multiple implementation variants for each component.
