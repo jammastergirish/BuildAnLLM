@@ -9,7 +9,7 @@ from datetime import datetime
 import plotly.graph_objects as go
 import pandas as pd
 
-from config import ModelConfig
+from config import ModelConfig, Architecture, PositionalEncoding, Normalization, Activation
 from training_args import TransformerTrainingArgs
 from trainer import TransformerTrainer
 from dataset import TransformerDataset
@@ -208,31 +208,347 @@ if not uploaded_file and not use_default:
 
 # Architecture selection
 st.header("2. Model Architecture")
-col1, col2 = st.columns(2)
+
+# Initialize session state for config if not exists
+if "model_config" not in st.session_state:
+    st.session_state.model_config = {
+        "positional_encoding": "learned",
+        "normalization": "layernorm",
+        "activation": "gelu",
+        "model_size": "small",
+        "d_model": 256,
+        "n_heads": 4,
+        "n_layers": 4,
+        "n_ctx": 256,
+        "d_head": 64,
+        "d_mlp": 1024,
+        "rope_theta": 10000.0,
+        "tokenizer_type": "bpe",  # Default to BPE (GPT-2 style)
+    }
+
+# Helper function to get model size index safely
+
+
+def get_model_size_index(size):
+    sizes = ["small", "medium", "full"]
+    return sizes.index(size) if size in sizes else 0
+
+
+# Preset buttons
+st.subheader("Quick Presets")
+
+
+def apply_preset(preset_name, version, model_size):
+    """Apply preset configuration based on preset name, version, and model size"""
+    if preset_name == "GPT":
+        if version == "2":
+            st.session_state.model_config["positional_encoding"] = "learned"
+            st.session_state.model_config["normalization"] = "layernorm"
+            st.session_state.model_config["activation"] = "gelu"
+            st.session_state.model_config["tokenizer_type"] = "bpe"
+        # Future: GPT-3, GPT-4 would go here
+
+    elif preset_name == "LLAMA":
+        st.session_state.model_config["positional_encoding"] = "rope"
+        st.session_state.model_config["normalization"] = "rmsnorm"
+        st.session_state.model_config["activation"] = "swiglu"
+        st.session_state.model_config["tokenizer_type"] = "sentencepiece"
+
+        if version == "1":
+            st.session_state.model_config["rope_theta"] = 10000.0
+            # LLaMA 1: Standard attention, vocab 32K, context 2K
+        elif version == "2":
+            st.session_state.model_config["rope_theta"] = 10000.0
+            # LLaMA 2: GQA in larger models, vocab 32K, context 4K
+        elif version == "3":
+            st.session_state.model_config["rope_theta"] = 500000.0
+            # LLaMA 3: GQA standard, vocab 128K, context 128K
+
+    elif preset_name == "OLMO":
+        # Note: OLMo 3 uses RoPE, but our implementation uses ALiBi (OLMo 1 style)
+        if version in ("1", ""):
+            st.session_state.model_config["positional_encoding"] = "alibi"
+            st.session_state.model_config["normalization"] = "layernorm"
+            st.session_state.model_config["activation"] = "swiglu"
+            st.session_state.model_config["tokenizer_type"] = "sentencepiece"
+        # Future: OLMo 3 would use RoPE, SWA attention
+
+    # Set dimensions based on model size (same for all presets)
+    if model_size == "small":
+        st.session_state.model_config["d_model"] = 256
+        st.session_state.model_config["n_heads"] = 4
+        st.session_state.model_config["n_layers"] = 4
+        st.session_state.model_config["n_ctx"] = 256
+        st.session_state.model_config["d_head"] = 64
+        st.session_state.model_config["d_mlp"] = 1024
+    elif model_size == "medium":
+        st.session_state.model_config["d_model"] = 512
+        st.session_state.model_config["n_heads"] = 8
+        st.session_state.model_config["n_layers"] = 6
+        st.session_state.model_config["n_ctx"] = 512
+        st.session_state.model_config["d_head"] = 64
+        st.session_state.model_config["d_mlp"] = 2048
+    else:  # full
+        st.session_state.model_config["d_model"] = 768
+        st.session_state.model_config["n_heads"] = 12
+        st.session_state.model_config["n_layers"] = 12
+        st.session_state.model_config["n_ctx"] = 1024
+        st.session_state.model_config["d_head"] = 64
+        st.session_state.model_config["d_mlp"] = 3072
+
+
+# GPT presets
+st.markdown("**GPT Models:**")
+col_gpt1, col_gpt2, col_gpt3 = st.columns(3)
+with col_gpt1:
+    if st.button("🚀 GPT-2", use_container_width=True):
+        model_size = st.session_state.model_config.get("model_size", "small")
+        apply_preset("GPT", "2", model_size)
+        st.rerun()
+with col_gpt2:
+    st.caption("GPT-3/4 not implemented")
+with col_gpt3:
+    st.caption("(Different architecture)")
+
+# LLaMA presets
+st.markdown("**LLaMA Models:**")
+col_llama1, col_llama2, col_llama3 = st.columns(3)
+with col_llama1:
+    if st.button("🦙 LLaMA 1", use_container_width=True):
+        model_size = st.session_state.model_config.get("model_size", "small")
+        apply_preset("LLAMA", "1", model_size)
+        st.rerun()
+with col_llama2:
+    if st.button("🦙 LLaMA 2", use_container_width=True):
+        model_size = st.session_state.model_config.get("model_size", "small")
+        apply_preset("LLAMA", "2", model_size)
+        st.rerun()
+with col_llama3:
+    if st.button("🦙 LLaMA 3", use_container_width=True):
+        model_size = st.session_state.model_config.get("model_size", "small")
+        apply_preset("LLAMA", "3", model_size)
+        st.rerun()
+
+# OLMo presets
+st.markdown("**OLMo Models:**")
+col_olmo1, col_olmo2, col_olmo3 = st.columns(3)
+with col_olmo1:
+    if st.button("🔬 OLMo 1", use_container_width=True):
+        model_size = st.session_state.model_config.get("model_size", "small")
+        apply_preset("OLMO", "1", model_size)
+        st.rerun()
+with col_olmo2:
+    st.caption("OLMo 3 not implemented")
+with col_olmo3:
+    st.caption("(Uses RoPE + SWA)")
+
+st.markdown("---")
+col4 = st.columns(1)[0]
+with col4:
+    # st.caption("Click a preset to configure components. Model size below affects dimensions.")/
+    with st.expander("ℹ️ About Presets", expanded=False):
+        st.markdown("""
+        **GPT Models:**
+        - **GPT-2**: Learned positional embeddings, LayerNorm, GELU activation, BPE tokenizer
+        - **GPT-3/4**: Not implemented (different architectures)
+        
+        **LLaMA Models:**
+        - **LLaMA 1**: RoPE (θ=10K), RMSNorm, SwiGLU, SentencePiece, standard attention, vocab 32K, context 2K
+        - **LLaMA 2**: RoPE (θ=10K), RMSNorm, SwiGLU, SentencePiece, GQA in larger models, vocab 32K, context 4K
+        - **LLaMA 3**: RoPE (θ=500K), RMSNorm, SwiGLU, SentencePiece, GQA standard, vocab 128K, context 128K
+        
+        **Key Differences:**
+        - **LLaMA 2 vs 3**: Main difference is RoPE theta (10K → 500K) for better long-context handling
+        - **LLaMA 3** also has 4x larger vocabulary (32K → 128K tokens) and much longer context window
+        - **GQA** (Grouped Query Attention) is not yet implemented in this codebase
+        
+        **OLMo Models:**
+        - **OLMo 1**: ALiBi positional encoding, LayerNorm, SwiGLU, SentencePiece
+        - **OLMo 3**: Not implemented (uses RoPE + Sliding Window Attention)
+        
+        **Model Dimensions:**
+        - All presets use the same dimensions for each size (small/medium/full)
+        - The difference is in the architectural components, not the dimensions
+        - **Small**: 256 dim, 4 layers, 4 heads (fast training)
+        - **Medium**: 512 dim, 6 layers, 8 heads (balanced)
+        - **Full**: 768 dim, 12 layers, 12 heads (GPT-2/LLaMA size)
+        
+        **Tokenizers:**
+        - Clicking a preset automatically sets the appropriate tokenizer
+        - You can still manually change the tokenizer after selecting a preset
+        
+        **Note**: GQA (Grouped Query Attention) is not yet implemented in the codebase.
+        """)
+
+# Model Components
+st.subheader("Model Components")
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    architecture = st.selectbox(
-        "Architecture",
-        ["GPT", "LLAMA", "OLMO"],
-        help="Choose the transformer architecture"
+    pos_encoding = st.selectbox(
+        "Positional Encoding",
+        ["learned", "rope", "alibi", "none"],
+        index=["learned", "rope", "alibi", "none"].index(
+            st.session_state.model_config["positional_encoding"]
+        ),
+        help="Learned: GPT-style embeddings\nRoPE: Rotary Position Embedding (LLaMA)\nALiBi: Attention with Linear Biases (OLMo)\nNone: No positional encoding"
     )
+    st.session_state.model_config["positional_encoding"] = pos_encoding
 
 with col2:
-    model_size = st.selectbox(
-        "Model Size",
-        ["small", "full"],
-        help="Small for faster training, full for GPT-2/LLaMA size"
+    norm_type = st.selectbox(
+        "Normalization",
+        ["layernorm", "rmsnorm"],
+        index=["layernorm", "rmsnorm"].index(
+            st.session_state.model_config["normalization"]
+        ),
+        help="LayerNorm: GPT/OLMo style\nRMSNorm: LLaMA style (simpler, faster)"
     )
+    st.session_state.model_config["normalization"] = norm_type
+
+with col3:
+    activation_type = st.selectbox(
+        "Activation Function",
+        ["gelu", "swiglu"],
+        index=["gelu", "swiglu"].index(
+            st.session_state.model_config["activation"]
+        ),
+        help="GELU: GPT style\nSwiGLU: LLaMA/OLMo style (gated)"
+    )
+    st.session_state.model_config["activation"] = activation_type
+
+# Model Dimensions
+st.subheader("Model Dimensions")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    d_model = st.number_input(
+        "d_model (Model Dimension)",
+        min_value=64,
+        max_value=4096,
+        value=st.session_state.model_config["d_model"],
+        step=64,
+        help="Hidden dimension size"
+    )
+    st.session_state.model_config["d_model"] = d_model
+
+    n_heads = st.number_input(
+        "n_heads (Number of Heads)",
+        min_value=1,
+        max_value=64,
+        value=st.session_state.model_config["n_heads"],
+        help="Number of attention heads"
+    )
+    st.session_state.model_config["n_heads"] = n_heads
+
+with col2:
+    n_layers = st.number_input(
+        "n_layers (Number of Layers)",
+        min_value=1,
+        max_value=128,
+        value=st.session_state.model_config["n_layers"],
+        help="Number of transformer layers"
+    )
+    st.session_state.model_config["n_layers"] = n_layers
+
+    n_ctx = st.number_input(
+        "n_ctx (Context Length)",
+        min_value=64,
+        max_value=8192,
+        value=st.session_state.model_config["n_ctx"],
+        step=64,
+        help="Maximum sequence length"
+    )
+    st.session_state.model_config["n_ctx"] = n_ctx
+
+with col3:
+    d_head = st.number_input(
+        "d_head (Head Dimension)",
+        min_value=32,
+        max_value=256,
+        value=st.session_state.model_config["d_head"],
+        step=32,
+        help="Dimension per attention head"
+    )
+    st.session_state.model_config["d_head"] = d_head
+
+    d_mlp = st.number_input(
+        "d_mlp (MLP Dimension)",
+        min_value=128,
+        max_value=16384,
+        value=st.session_state.model_config["d_mlp"],
+        step=128,
+        help="MLP hidden dimension (typically 4x d_model)"
+    )
+    st.session_state.model_config["d_mlp"] = d_mlp
+
+# Model size selector - updates dimensions immediately
+st.markdown("**Model Size Preset**")
+model_size = st.selectbox(
+    "Size",
+    ["small", "medium", "full"],
+    index=get_model_size_index(
+        st.session_state.model_config.get("model_size", "small")),
+    help="Selecting a size automatically updates all model dimensions below."
+)
+
+# Update dimensions immediately when size changes
+if st.session_state.model_config.get("model_size") != model_size:
+    st.session_state.model_config["model_size"] = model_size
+    # Apply dimension changes
+    if model_size == "small":
+        st.session_state.model_config["d_model"] = 256
+        st.session_state.model_config["n_heads"] = 4
+        st.session_state.model_config["n_layers"] = 4
+        st.session_state.model_config["n_ctx"] = 256
+        st.session_state.model_config["d_head"] = 64
+        st.session_state.model_config["d_mlp"] = 1024
+    elif model_size == "medium":
+        st.session_state.model_config["d_model"] = 512
+        st.session_state.model_config["n_heads"] = 8
+        st.session_state.model_config["n_layers"] = 6
+        st.session_state.model_config["n_ctx"] = 512
+        st.session_state.model_config["d_head"] = 64
+        st.session_state.model_config["d_mlp"] = 2048
+    else:  # full
+        st.session_state.model_config["d_model"] = 768
+        st.session_state.model_config["n_heads"] = 12
+        st.session_state.model_config["n_layers"] = 12
+        st.session_state.model_config["n_ctx"] = 1024
+        st.session_state.model_config["d_head"] = 64
+        st.session_state.model_config["d_mlp"] = 3072
+    st.rerun()
+
+st.session_state.model_config["model_size"] = model_size
+
+# RoPE settings (only shown when RoPE is selected)
+if pos_encoding == "rope":
+    rope_theta = st.number_input(
+        "RoPE Theta (Base Frequency)",
+        min_value=1000.0,
+        max_value=1000000.0,
+        value=st.session_state.model_config["rope_theta"],
+        step=1000.0,
+        format="%.0f",
+        help="Base frequency for RoPE. LLaMA 1/2: 10000, LLaMA 3: 500000"
+    )
+    st.session_state.model_config["rope_theta"] = rope_theta
 
 use_einops = st.checkbox("Use einops (recommended)", value=True)
 
 # Tokenizer selection
 st.header("3. Tokenizer")
+tokenizer_options = ["character", "bpe", "sentencepiece"]
+current_tokenizer = st.session_state.model_config.get("tokenizer_type", "bpe")
+tokenizer_index = tokenizer_options.index(
+    current_tokenizer) if current_tokenizer in tokenizer_options else 1
 tokenizer_type = st.selectbox(
     "Tokenizer Type",
-    ["character", "bpe", "sentencepiece"],
-    help="Character: simple but large vocab. BPE: subword units. SentencePiece: multilingual support."
+    tokenizer_options,
+    index=tokenizer_index,
+    help="Character: simple but large vocab. BPE: subword units (GPT-2 style). SentencePiece: multilingual support (LLaMA/OLMo style)."
 )
+st.session_state.model_config["tokenizer_type"] = tokenizer_type
 
 # Hyperparameters
 st.header("4. Training Hyperparameters")
@@ -290,13 +606,24 @@ if start_training:
                 text = f.read()
             st.info(f"Loaded {len(text)} characters from training.txt")
 
-        # Initialize config
-        if architecture == "LLAMA":
-            cfg = ModelConfig.llama_small() if model_size == "small" else ModelConfig.llama_full()
-        elif architecture == "OLMO":
-            cfg = ModelConfig.olmo_small() if model_size == "small" else ModelConfig.olmo_full()
-        else:  # GPT
-            cfg = ModelConfig.gpt_small() if model_size == "small" else ModelConfig.gpt_full()
+        # Initialize config from session state
+        cfg = ModelConfig(
+            # Base architecture, doesn't matter since we use component configs
+            architecture=Architecture.GPT,
+            d_model=st.session_state.model_config["d_model"],
+            n_heads=st.session_state.model_config["n_heads"],
+            n_layers=st.session_state.model_config["n_layers"],
+            n_ctx=st.session_state.model_config["n_ctx"],
+            d_head=st.session_state.model_config["d_head"],
+            d_mlp=st.session_state.model_config["d_mlp"],
+            positional_encoding=PositionalEncoding(
+                st.session_state.model_config["positional_encoding"]),
+            normalization=Normalization(
+                st.session_state.model_config["normalization"]),
+            activation=Activation(st.session_state.model_config["activation"]),
+            rope_theta=st.session_state.model_config.get(
+                "rope_theta", 10000.0),
+        )
 
         # Create dataset
         dataset = TransformerDataset(
