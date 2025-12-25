@@ -10,7 +10,7 @@ The goal is twofold: you can pre-train an LLM from scratch using a simple, intui
 
 I built this project after learning from videos, books, and lecture notes by Andrej Karpathy, Neel Nanda, Sebastian Raschka, ARENA, Stanford's CS224N, 3Blue1Brown, Jay Alammar, and many others (links below). My goal was to build a transformer-based LLM from scratch and create an intuitive interface to experiment with different architectures and configurations. I'm incredibly grateful to all those from whom I learned and borrowed ideas—this project wouldn't exist without their excellent educational content. I hope it can be useful to others on their own learning journey.
 
-## Table of Contents
+## Contents
 
 1. [Project Overview](#project-overview)
 2. [Project Structure](#project-structure)
