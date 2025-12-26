@@ -297,7 +297,7 @@ def generate_model_architecture_diagram(config: Dict) -> str:
     diagram.append(f"                   [Token Embeddings]")
     diagram.append(f"                    (vocab → {d_model})")
     diagram.append("                           |")
-    if pos_enc != "none":
+    if pos_enc == "learned":
         diagram.append("                           +")
         diagram.append(f"                   [{pos_enc_display}]")
         diagram.append("                           |")
@@ -319,7 +319,15 @@ def generate_model_architecture_diagram(config: Dict) -> str:
         diagram.append("          │       [Multi-Head       │      │")
         diagram.append("          │        Attention]       │      │")
         diagram.append(f"          │       ({n_heads} heads)         │      │")
-        diagram.append("          │                         │      │")
+
+        # Add positional encoding info inside attention block
+        if pos_enc == "rope":
+            diagram.append("          │    (RoPE on Q,K)       │      │")
+        elif pos_enc == "alibi":
+            diagram.append("          │   (ALiBi bias added)   │      │")
+        else:
+            diagram.append("          │                         │      │")
+
         diagram.append("          │ <───────────────────────┘      │")
         diagram.append("          │            +                   │")
         diagram.append("          │                                │")
