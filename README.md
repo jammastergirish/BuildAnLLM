@@ -4,10 +4,10 @@
 
 This repository contains a complete, educational implementation of a transformer-based autoregressive, decoder-only language model from scratch. 
 
-There are two things I think will be helpful to those wanting to learn here. They can:
+This repository offers two learning objectives:
 
-- Pre-train an LLM from scratch using a simple, intuitive interface.
-- Explore the codebase to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. 
+- **Pre-train an LLM from scratch** using a simple, intuitive interface.
+- **Explore the codebase** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. 
 
 I built this project as I wanted to properly understand LLMs. While videos, books, and lecture notes from Andrej Karpathy, Neel Nanda, Sebastian Raschka, ARENA, Stanford's CS224N, 3Blue1Brown, Jay Alammar, and many others (links below) were incredibly helpful, I knew that to properly understand, I had to write code myself. I'm incredibly grateful to all those from whom I learned and borrowed ideas. I hope others find it helpful too!
 
