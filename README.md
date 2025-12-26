@@ -9,9 +9,9 @@ It offers two learning objectives:
 - **Pre-train an LLM from scratch** using a simple, intuitive interface.
 - **Explore the codebase** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. 
 
-I built this project as I wanted to properly understand LLMs. While videos, books, and lecture notes from Andrej Karpathy, Neel Nanda, Sebastian Raschka, ARENA, Stanford's CS224N, 3Blue1Brown, Jay Alammar, and many others ([links below](#resources)) were incredibly helpful, I knew that to properly understand, I had to write code myself. I'm incredibly grateful to all those from whom I learned and borrowed ideas. I hope others find it helpful too!
+I built this project as I wanted to properly understand LLMs. To do this, I had to write code myself rather than just watch videos and read books and lecture notes ((links below)[(#resources)]). I'm incredibly grateful to all those from whom I learned and borrowed ideas. I hope others find it helpful too!
 
-(This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and does not include encoder-only models (like BERT), encoder-decoder models (like T5), or Mixture of Experts architectures (like DeepSeek-V2). It also does not yet go past the pre-training stage.)
+_(This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and does not include encoder-only models (like BERT), encoder-decoder models (like T5), or Mixture of Experts architectures (like DeepSeek-V2). It also does not yet go past the pre-training stage.)_
 
 ## What You'll Learn
 
