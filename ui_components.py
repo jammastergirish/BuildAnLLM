@@ -213,7 +213,8 @@ def _render_model_size_selector(config: Dict) -> None:
     model_size = st.selectbox(
         "Size",
         ["small", "medium", "full"],
-        index=["small", "medium", "full"].index(config.get("model_size", "small")),
+        index=["small", "medium", "full"].index(
+            config.get("model_size", "small")),
         help="Selecting a size automatically updates all model dimensions below."
     )
 
@@ -286,7 +287,8 @@ def generate_model_architecture_diagram(config: Dict) -> str:
     diagram = []
 
     # Title
-    diagram.append(f"Transformer Architecture ({n_layers} layers, d_model={d_model})")
+    diagram.append(
+        f"Transformer Architecture ({n_layers} layers, d_model={d_model})")
     diagram.append("="*60)
     diagram.append("")
 
@@ -310,7 +312,8 @@ def generate_model_architecture_diagram(config: Dict) -> str:
 
     # Layers
     for layer_idx in range(n_layers):
-        diagram.append(f"          │  ─ ─ ─ Layer {layer_idx + 1} ─ ─ ─ ─ ─ ─     │")
+        diagram.append(
+            f"          │  ─ ─ ─ Layer {layer_idx + 1} ─ ─ ─ ─ ─ ─     │")
         diagram.append("          │                                │")
 
         # Attention block
@@ -336,8 +339,10 @@ def generate_model_architecture_diagram(config: Dict) -> str:
         diagram.append(f"          ├──────> [{norm_display}] ─────┐      │")
         diagram.append("          │                         │      │")
         diagram.append("          │         [MLP]           │      │")
-        diagram.append(f"          │    ({d_model}→{d_mlp}→{d_model})       │      │")
-        diagram.append(f"          │        [{activation_display}]           │      │")
+        diagram.append(
+            f"          │    ({d_model}→{d_mlp}→{d_model})       │      │")
+        diagram.append(
+            f"          │        [{activation_display}]           │      │")
         diagram.append("          │                         │      │")
         diagram.append("          │ <───────────────────────┘      │")
         diagram.append("          │            +                   │")
@@ -375,7 +380,8 @@ def generate_graphviz_architecture(config: Dict) -> str:
     dot.append('    ranksep=0.8;')
 
     # Node styles
-    dot.append('    node [shape=box, style=filled, fillcolor="#5a5a5a", fontcolor="white", ')
+    dot.append(
+        '    node [shape=box, style=filled, fillcolor="#5a5a5a", fontcolor="white", ')
     dot.append('          fontname="Arial", fontsize=10, height=0.5, width=1.2];')
     dot.append('    edge [color="#aaaaaa", penwidth=1.5, arrowsize=0.7];')
     dot.append('')
@@ -384,6 +390,12 @@ def generate_graphviz_architecture(config: Dict) -> str:
     dot.append('    // Input/Output nodes')
     dot.append('    tokens [label="tokens", fillcolor="#4a4a4a"];')
     dot.append('    embed [label="embed", fillcolor="#6a6a4a"];')
+
+    # Positional embedding node if needed
+    if pos_enc == "learned":
+        dot.append(
+            '    pos_emb [label="Positional Embeddings", fillcolor="#7a7a4a"];')
+
     dot.append('    logits [label="logits", fillcolor="#4a4a4a"];')
     dot.append('    unembed [label="unembed", fillcolor="#6a6a4a"];')
 
@@ -391,9 +403,12 @@ def generate_graphviz_architecture(config: Dict) -> str:
     dot.append('')
     dot.append('    // Residual stream points')
     dot.append('    x0 [shape=plaintext, label="x₀", fontcolor="#cccccc"];')
-    dot.append('    x1 [shape=plaintext, label="x_{i+1}", fontcolor="#cccccc"];')
-    dot.append('    x2 [shape=plaintext, label="x_{i+2}", fontcolor="#cccccc"];')
-    dot.append('    x_final [shape=plaintext, label="x_{-1}", fontcolor="#cccccc"];')
+    dot.append(
+        '    x1 [shape=plaintext, label="x_{i+1}", fontcolor="#cccccc"];')
+    dot.append(
+        '    x2 [shape=plaintext, label="x_{i+2}", fontcolor="#cccccc"];')
+    dot.append(
+        '    x_final [shape=plaintext, label="x_{-1}", fontcolor="#cccccc"];')
 
     # Residual block in a cluster
     dot.append('')
@@ -434,23 +449,26 @@ def generate_graphviz_architecture(config: Dict) -> str:
 
     # Handle positional encoding
     if pos_enc == "learned":
-        dot.append('    embed -> x0 [label="+PE", fontsize=8, fontcolor="yellow"];')
+        dot.append('    embed -> pos_emb;')
+        dot.append('    pos_emb -> x0;')
     else:
         dot.append('    embed -> x0;')
 
     # One block connections
     dot.append('    x0 -> x1;')
-    dot.append('    x1 -> heads [dir=both, label="+", fontsize=10, fontcolor="yellow"];')
+    dot.append(
+        '    x1 -> heads [dir=both, label="+", fontsize=10, fontcolor="yellow"];')
     dot.append('    x1 -> x2;')
-    dot.append('    x2 -> mlp [dir=both, label="+", fontsize=10, fontcolor="yellow"];')
+    dot.append(
+        '    x2 -> mlp [dir=both, label="+", fontsize=10, fontcolor="yellow"];')
 
     # Repetition indicator
-    dot.append('    x2 -> x_final [label="...", fontsize=12, fontcolor="#888888"];')
+    dot.append(
+        '    x2 -> x_final [label="...", fontsize=12, fontcolor="#888888"];')
 
     # Output
     dot.append('    x_final -> unembed;')
     dot.append('    unembed -> logits;')
-
 
     dot.append('}')
 
@@ -483,5 +501,6 @@ def render_model_architecture_diagram(config: Dict) -> None:
                 dot_code = generate_graphviz_architecture(config)
                 st.graphviz_chart(dot_code)
             except ImportError:
-                st.warning("Graphviz is not installed. Install it with: `pip install graphviz`")
+                st.warning(
+                    "Graphviz is not installed. Install it with: `pip install graphviz`")
                 st.code(generate_graphviz_architecture(config), language="dot")
