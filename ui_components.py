@@ -46,7 +46,7 @@ def apply_architecture_preset(preset_name: str, config: Dict) -> None:
         config["positional_encoding"] = "learned"
         config["normalization"] = "layernorm"
         config["activation"] = "gelu"
-        config["tokenizer_type"] = "bpe"
+        config["tokenizer_type"] = "bpe-tiktoken"
     elif preset_name == "LLAMA":
         config["positional_encoding"] = "rope"
         config["normalization"] = "rmsnorm"
@@ -101,7 +101,7 @@ def _get_default_config() -> Dict:
         "d_head": 64,
         "d_mlp": 1024,
         "rope_theta": 10000.0,
-        "tokenizer_type": "bpe",
+        "tokenizer_type": "bpe-tiktoken",
     }
 
 
@@ -240,7 +240,7 @@ def _get_preset_info() -> str:
     """Get preset information markdown."""
     return """
     **Preset Configurations:**
-    - **GPT-2**: Learned positional embeddings, LayerNorm, GELU activation, BPE tokenizer
+    - **GPT-2**: Learned positional embeddings, LayerNorm, GELU activation, BPE-tiktoken (GPT-2 style)
     - **LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation, SentencePiece tokenizer
     - **OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation, SentencePiece tokenizer
 

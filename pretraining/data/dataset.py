@@ -4,6 +4,7 @@ from config import ModelConfig
 from pretraining.tokenization.tokenizer import (
     CharacterTokenizer,
     CharacterTokenizerWithTorch,
+    SimpleBPETokenizer,
     BPETokenizer,
     SentencePieceTokenizer,
 )
@@ -44,7 +45,12 @@ class TransformerDataset:
             self.tokenizer = CharacterTokenizer(self.text)
         elif self.tokenizer_type == "character_torch":
             self.tokenizer = CharacterTokenizerWithTorch(self.text)
-        elif self.tokenizer_type == "bpe":
+        elif self.tokenizer_type == "bpe-simple":
+            # Use a reasonable vocab size for simple BPE
+            vocab_size = min(self.cfg.d_vocab if hasattr(self.cfg, 'd_vocab') else 1000, 5000)
+            self.tokenizer = SimpleBPETokenizer(self.text, vocab_size=vocab_size)
+        elif self.tokenizer_type == "bpe-tiktoken" or self.tokenizer_type == "bpe":
+            # Support "bpe" for backward compatibility with old checkpoints
             self.tokenizer = BPETokenizer(self.text)
         elif self.tokenizer_type == "sentencepiece":
             self.tokenizer = SentencePieceTokenizer(

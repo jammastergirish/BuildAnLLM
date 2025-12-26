@@ -12,7 +12,7 @@ from collections import defaultdict
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
-from pretraining.tokenization.tokenizer import CharacterTokenizer, BPETokenizer, SentencePieceTokenizer
+from pretraining.tokenization.tokenizer import CharacterTokenizer, SimpleBPETokenizer, BPETokenizer, SentencePieceTokenizer
 from inference.sampler import TransformerSampler
 
 
@@ -145,7 +145,20 @@ if load_model or st.session_state.current_model is not None:
                     st.error(
                         "training.txt not found. Cannot load character tokenizer.")
                     st.stop()
-            elif tokenizer_type == "bpe":
+            elif tokenizer_type == "bpe-simple":
+                # Simple BPE requires original training text to recreate
+                if os.path.exists("training.txt"):
+                    with open("training.txt", "r", encoding="utf-8") as f:
+                        text = f.read()
+                    # Use vocab size from config if available
+                    vocab_size = cfg.d_vocab if hasattr(cfg, 'd_vocab') else 1000
+                    tokenizer = SimpleBPETokenizer(text, vocab_size=vocab_size)
+                else:
+                    st.error(
+                        "training.txt not found. Cannot recreate Simple BPE tokenizer.")
+                    st.stop()
+            elif tokenizer_type == "bpe-tiktoken" or tokenizer_type == "bpe":
+                # Support "bpe" for backward compatibility with old checkpoints
                 tokenizer = BPETokenizer()
             elif tokenizer_type == "sentencepiece":
                 # SentencePiece requires original training text to recreate

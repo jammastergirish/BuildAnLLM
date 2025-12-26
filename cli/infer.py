@@ -5,7 +5,7 @@
 """Inference script for generating text from trained GPT models."""
 
 import argparse
-from pretraining.tokenization.tokenizer import CharacterTokenizer, BPETokenizer
+from pretraining.tokenization.tokenizer import CharacterTokenizer, SimpleBPETokenizer, BPETokenizer
 from inference.sampler import TransformerSampler
 from pretraining.model.model_loader import load_model_from_checkpoint
 from utils import get_device
@@ -55,8 +55,8 @@ def main():
         "--tokenizer_type",
         type=str,
         default=None,
-        choices=["character", "bpe"],
-        help="Tokenizer type (auto-detected from checkpoint if not provided)"
+        choices=["character", "bpe-simple", "bpe-tiktoken"],
+        help="Tokenizer type (auto-detected from checkpoint if not provided). bpe-tiktoken is GPT-2 style."
     )
     parser.add_argument(
         "--text_file",
@@ -86,7 +86,7 @@ def main():
         if args.tokenizer_type is None:
             raise ValueError(
                 "Tokenizer type not found in checkpoint and not provided. "
-                "Please specify --tokenizer_type (character or bpe)"
+                "Please specify --tokenizer_type (character, bpe-simple, or bpe-tiktoken)"
             )
         tokenizer_type = args.tokenizer_type
         print(
@@ -105,7 +105,14 @@ def main():
         with open(args.text_file, "r", encoding="utf-8") as f:
             text = f.read()
         tokenizer = CharacterTokenizer(text)
-    elif tokenizer_type == "bpe":
+    elif tokenizer_type == "bpe-simple":
+        with open(args.text_file, "r", encoding="utf-8") as f:
+            text = f.read()
+        # Use vocab size from config if available
+        vocab_size = checkpoint.get("d_vocab", 1000) if hasattr(checkpoint, 'get') else 1000
+        tokenizer = SimpleBPETokenizer(text, vocab_size=vocab_size)
+    elif tokenizer_type == "bpe-tiktoken" or tokenizer_type == "bpe":
+        # Support "bpe" for backward compatibility with old checkpoints
         tokenizer = BPETokenizer()
     else:
         raise ValueError(f"Unknown tokenizer type: {tokenizer_type}")

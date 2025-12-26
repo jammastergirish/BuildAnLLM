@@ -365,15 +365,15 @@ use_einops = st.checkbox("Use einops (recommended)", value=True)
 
 # Tokenizer selection
 st.header("3. Tokenizer")
-tokenizer_options = ["character", "bpe", "sentencepiece"]
-current_tokenizer = model_config.get("tokenizer_type", "bpe")
+tokenizer_options = ["character", "bpe-simple", "bpe-tiktoken", "sentencepiece"]
+current_tokenizer = model_config.get("tokenizer_type", "bpe-tiktoken")
 tokenizer_index = tokenizer_options.index(
-    current_tokenizer) if current_tokenizer in tokenizer_options else 1
+    current_tokenizer) if current_tokenizer in tokenizer_options else 2
 tokenizer_type = st.selectbox(
     "Tokenizer Type",
     tokenizer_options,
     index=tokenizer_index,
-    help="Character: simple but large vocab. BPE: subword units (GPT-2 style). SentencePiece: multilingual support (LLaMA/OLMo style)."
+    help="Character: simple but large vocab. BPE-simple: basic BPE implementation (educational). BPE-tiktoken: subword units using tiktoken (GPT-2 style). SentencePiece: multilingual support (LLaMA/OLMo style)."
 )
 model_config["tokenizer_type"] = tokenizer_type
 

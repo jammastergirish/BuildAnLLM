@@ -49,8 +49,8 @@ def main():
         "--tokenizer_type",
         type=str,
         default="character",
-        choices=["character", "bpe", "sentencepiece"],
-        help="Tokenizer type"
+        choices=["character", "bpe-simple", "bpe-tiktoken", "sentencepiece"],
+        help="Tokenizer type (bpe-tiktoken is GPT-2 style using tiktoken)"
     )
     parser.add_argument(
         "--text_file",
