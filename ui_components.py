@@ -1,7 +1,11 @@
 """Reusable Streamlit UI components."""
 
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
 import streamlit as st
-from typing import Dict
 
 
 # Model size presets
@@ -385,3 +389,151 @@ def render_model_architecture_diagram(config: Dict) -> None:
         - **Attention heads** and **MLP blocks** branch off and add their contributions back with "+"
         - The **dashed box** shows one residual block that repeats multiple times
         """)
+
+
+def parse_timestamp(timestamp_str: str) -> str:
+    """Parse YYYYMMDDHHMMSS format to readable datetime string."""
+    try:
+        dt = datetime.strptime(timestamp_str, "%Y%m%d%H%M%S")
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return timestamp_str
+
+
+def organize_checkpoints_by_run(checkpoints: List[Dict]) -> List[Tuple[str, List[Dict]]]:
+    """Organize checkpoints by run (timestamp directory)."""
+    runs = defaultdict(list)
+    for ckpt in checkpoints:
+        timestamp = ckpt.get("timestamp", "")
+        runs[timestamp].append(ckpt)
+
+    sorted_runs = sorted(runs.items(), key=lambda x: x[0], reverse=True)
+    return sorted_runs
+
+
+def render_checkpoint_selector(
+    header: str = "Select Model Checkpoint",
+    filter_finetuned: bool = False,
+    help_text: Optional[str] = None,
+    no_checkpoints_message: Optional[str] = None,
+) -> Optional[Dict]:
+    """
+    Render checkpoint selection UI and return selected checkpoint.
+
+    Args:
+        header: Header text for the checkpoint selection section
+        filter_finetuned: If True, filter out fine-tuned checkpoints
+        help_text: Help text for the run selectbox
+        no_checkpoints_message: Message to show when no checkpoints found
+
+    Returns:
+        Selected checkpoint dict or None if no checkpoint selected
+    """
+    st.header(header)
+    checkpoints = st.session_state.scan_checkpoints()
+
+    if not checkpoints:
+        msg = no_checkpoints_message or "No checkpoints found. Please train a model first."
+        st.warning(msg)
+        st.stop()
+        return None
+
+    # Filter checkpoints if needed
+    if filter_finetuned:
+        checkpoints = [
+            ckpt for ckpt in checkpoints if "sft" not in ckpt["path"]]
+        if not checkpoints:
+            msg = (no_checkpoints_message or
+                   "No pre-trained checkpoints found. Please pre-train a model first.")
+            st.warning(msg)
+            st.stop()
+            return None
+
+    # Organize by run
+    sorted_runs = organize_checkpoints_by_run(checkpoints)
+
+    # Select run first
+    run_options = []
+    run_display_map = {}
+    for timestamp, checkpoints_list in sorted_runs:
+        formatted_time = parse_timestamp(timestamp)
+        num_checkpoints = len(checkpoints_list)
+        plural = "s" if num_checkpoints != 1 else ""
+        display_text = f"{formatted_time} ({num_checkpoints} checkpoint{plural})"
+        run_options.append(display_text)
+        run_display_map[display_text] = timestamp
+
+    if not run_options:
+        msg = no_checkpoints_message or "No runs found. Please train a model first."
+        st.warning(msg)
+        st.stop()
+        return None
+
+    help_txt = help_text or "Select a training run to view its checkpoints"
+    selected_run_display = st.selectbox(
+        "Choose a training run",
+        options=run_options,
+        help=help_txt
+    )
+
+    selected_run_timestamp = run_display_map[selected_run_display]
+
+    # Get checkpoints for selected run
+    run_checkpoints = next(
+        checkpoints for timestamp, checkpoints in sorted_runs
+        if timestamp == selected_run_timestamp
+    )
+
+    # Sort checkpoints: final_model.pt first, then by iteration number
+    def sort_key(ckpt):
+        path = ckpt["path"]
+        if "final_model.pt" in path:
+            return (0, 0)  # Final model comes first
+        # Extract iteration number from checkpoint_XXXX.pt
+        try:
+            iter_num = int(Path(path).stem.split("_")[1])
+            return (1, iter_num)
+        except (IndexError, ValueError):
+            return (2, 0)  # Unknown format comes last
+
+    run_checkpoints.sort(key=sort_key, reverse=True)
+
+    # Select checkpoint within run
+    checkpoint_options = []
+    for ckpt in run_checkpoints:
+        path = Path(ckpt["path"])
+        is_finetuned = ckpt.get("is_finetuned", False)
+
+        if "final_model.pt" in path.name:
+            if is_finetuned:
+                label = "🏁 Final Model (Fine-tuned)"
+            else:
+                label = "🏁 Final Model (Pre-trained)"
+            checkpoint_options.append((ckpt, label))
+        else:
+            # Extract iteration number
+            try:
+                iter_num = int(path.stem.split("_")[1])
+                prefix = "Fine-tuned " if is_finetuned else ""
+                checkpoint_options.append(
+                    (ckpt, f"{prefix}Checkpoint {iter_num:,}"))
+            except (IndexError, ValueError):
+                prefix = "Fine-tuned " if is_finetuned else ""
+                checkpoint_options.append((ckpt, f"{prefix}{path.stem}"))
+
+    selected_checkpoint_idx = st.selectbox(
+        "Choose a checkpoint",
+        range(len(checkpoint_options)),
+        format_func=lambda x: checkpoint_options[x][1],
+        help="Select a checkpoint from this training run"
+    )
+
+    selected_checkpoint = checkpoint_options[selected_checkpoint_idx][0]
+
+    # Display selected checkpoint info
+    checkpoint_name = checkpoint_options[selected_checkpoint_idx][1]
+    run_time = selected_run_display.split(" (")[0]
+    st.info(
+        f"📌 Selected: **{checkpoint_name}** from training run **{run_time}**")
+
+    return selected_checkpoint

@@ -7,6 +7,12 @@ from pretraining.model.model import TransformerModelWithEinops, TransformerModel
 from pretraining.training.training_args import TransformerTrainingArgs
 from utils import print_state_dict_warnings
 
+# Import FinetuningArgs if available (for loading fine-tuned checkpoints)
+try:
+    from finetuning.training.finetuning_args import FinetuningArgs
+except ImportError:
+    FinetuningArgs = None
+
 
 def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> Tuple[Any, ModelConfig, Dict]:
     """Load model and config from checkpoint.
@@ -18,7 +24,10 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> Tu
     Returns:
         Tuple of (model, config, checkpoint_dict)
     """
-    torch.serialization.add_safe_globals([TransformerTrainingArgs])
+    safe_globals = [TransformerTrainingArgs]
+    if FinetuningArgs is not None:
+        safe_globals.append(FinetuningArgs)
+    torch.serialization.add_safe_globals(safe_globals)
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     cfg = _extract_config(checkpoint)

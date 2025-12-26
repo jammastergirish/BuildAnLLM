@@ -1,125 +1,38 @@
 """Inference page for generating text from trained models."""
 
-import streamlit as st
-import torch
 import os
 import sys
 from pathlib import Path
-from datetime import datetime
-from collections import defaultdict
+
+import streamlit as st
+import torch
 
 # Add parent directory to path to import from main
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
-from pretraining.tokenization.tokenizer import CharacterTokenizer, SimpleBPETokenizer, BPETokenizer, SentencePieceTokenizer
 from inference.sampler import TransformerSampler
-
-
-def parse_timestamp(timestamp_str):
-    """Parse YYYYMMDDHHMMSS format to readable datetime string."""
-    try:
-        dt = datetime.strptime(timestamp_str, "%Y%m%d%H%M%S")
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        # If parsing fails, return original string
-        return timestamp_str
-
-
-def organize_checkpoints_by_run(checkpoints):
-    """Organize checkpoints by run (timestamp directory)."""
-    runs = defaultdict(list)
-    for ckpt in checkpoints:
-        timestamp = ckpt.get("timestamp", "")
-        runs[timestamp].append(ckpt)
-    
-    # Sort runs by timestamp (newest first)
-    sorted_runs = sorted(runs.items(), key=lambda x: x[0], reverse=True)
-    
-    return sorted_runs
+from pretraining.model.model import (
+    TransformerModelWithEinops,
+    TransformerModelWithoutEinops,
+)
+from pretraining.tokenization.tokenizer import (
+    BPETokenizer,
+    CharacterTokenizer,
+    SentencePieceTokenizer,
+    SimpleBPETokenizer,
+)
+from ui_components import render_checkpoint_selector
 
 
 st.title("🎯 Inference")
 
 # Checkpoint selection
-st.header("1. Select Model Checkpoint")
-checkpoints = st.session_state.scan_checkpoints()
-
-if not checkpoints:
-    st.warning("No checkpoints found. Please train a model first.")
-    st.stop()
-
-# Organize checkpoints by run
-runs = organize_checkpoints_by_run(checkpoints)
-
-# Select run first
-run_options = []
-run_display_map = {}
-for timestamp, checkpoints_list in runs:
-    formatted_time = parse_timestamp(timestamp)
-    num_checkpoints = len(checkpoints_list)
-    display_text = f"{formatted_time} ({num_checkpoints} checkpoint{'s' if num_checkpoints != 1 else ''})"
-    run_options.append(display_text)
-    run_display_map[display_text] = timestamp
-
-if not run_options:
-    st.warning("No runs found. Please train a model first.")
-    st.stop()
-
-selected_run_display = st.selectbox(
-    "Choose a training run",
-    options=run_options,
-    help="Select a training run to view its checkpoints"
+selected_checkpoint = render_checkpoint_selector(
+    header="1. Select Model Checkpoint",
+    filter_finetuned=False,
+    help_text="Select a training run to view its checkpoints (includes both pre-trained and fine-tuned models)",
+    no_checkpoints_message="No checkpoints found. Please train a model first."
 )
-
-selected_run_timestamp = run_display_map[selected_run_display]
-
-# Get checkpoints for selected run
-run_checkpoints = next(checkpoints for timestamp, checkpoints in runs if timestamp == selected_run_timestamp)
-
-# Sort checkpoints: final_model.pt first, then by iteration number
-def sort_key(ckpt):
-    path = ckpt["path"]
-    if "final_model.pt" in path:
-        return (0, 0)  # Final model comes first
-    else:
-        # Extract iteration number from checkpoint_XXXX.pt
-        try:
-            iter_num = int(Path(path).stem.split("_")[1])
-            return (1, iter_num)
-        except (IndexError, ValueError):
-            return (2, 0)  # Unknown format comes last
-
-run_checkpoints.sort(key=sort_key, reverse=True)
-
-# Select checkpoint within run
-checkpoint_options = []
-for ckpt in run_checkpoints:
-    path = Path(ckpt["path"])
-    if "final_model.pt" in path.name:
-        checkpoint_options.append((ckpt, "🏁 Final Model"))
-    else:
-        # Extract iteration number
-        try:
-            iter_num = int(path.stem.split("_")[1])
-            checkpoint_options.append((ckpt, f"Checkpoint {iter_num:,}"))
-        except (IndexError, ValueError):
-            checkpoint_options.append((ckpt, path.stem))
-
-selected_checkpoint_idx = st.selectbox(
-    "Choose a checkpoint",
-    range(len(checkpoint_options)),
-    format_func=lambda x: checkpoint_options[x][1],
-    help="Select a checkpoint from this training run"
-)
-
-selected_checkpoint = checkpoint_options[selected_checkpoint_idx][0]
-
-# Display selected checkpoint info
-checkpoint_name = checkpoint_options[selected_checkpoint_idx][1]
-# Extract just the date/time part from the run display (before the parenthesis)
-run_time = selected_run_display.split(" (")[0]
-st.info(f"📌 Selected: **{checkpoint_name}** from training run **{run_time}**")
 
 # Load model button
 load_model = st.button("📥 Load Model", type="primary")

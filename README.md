@@ -4,14 +4,15 @@
 
 This repository contains a complete, educational implementation of a transformer-based autoregressive, decoder-only language model.
 
-It offers two learning objectives:
+It offers three learning objectives:
 
 - **Pre-train an LLM from scratch** using a simple, intuitive interface.
+- **Fine-tune a pre-trained model** on prompt/response pairs using supervised fine-tuning (SFT).
 - **Explore the codebase** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. 
 
 I built this project as I wanted to properly understand LLMs. To do this, I had to write code myself rather than just watch videos and read books and lecture notes ([links below](#resources)). I'm incredibly grateful to all those from whom I learned and borrowed ideas. I hope others find it helpful too!
 
-_(This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and does not include encoder-only models (like BERT), encoder-decoder models (like T5), or Mixture of Experts architectures (like DeepSeek-V2). It also does not yet go past the pre-training stage.)_
+_(This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and does not include encoder-only models (like BERT), encoder-decoder models (like T5), or Mixture of Experts architectures (like DeepSeek-V2). It includes pre-training and supervised fine-tuning (SFT), but not yet RLHF or other advanced fine-tuning techniques.)_
 
 ## What You'll Learn
 
@@ -20,7 +21,9 @@ By exploring the interface and codebase, you'll gain a deep understanding of:
 - **Transformer Architecture**: How decoder-only language models work from the ground up
 - **Core Components**: Attention mechanisms, normalization layers, positional encodings, and feedforward networks
 - **Architecture Variants**: Differences between GPT, LLaMA, and OLMo implementations
-- **Training Process**: How to pre-train a language model using next-token prediction
+- **Pre-Training Process**: How to pre-train a language model using next-token prediction on raw text
+- **Fine-Tuning Process**: How to fine-tune a pre-trained model on prompt/response pairs using supervised fine-tuning (SFT)
+- **Loss Masking**: How to compute loss only on response tokens (not prompt tokens) during fine-tuning
 - **Text Generation**: Autoregressive generation and sampling strategies (temperature, top-k, top-p)
 - **Implementation Details**: Multiple implementation approaches (with/without einops, manual vs PyTorch built-ins) to understand what's happening under the hood
 
@@ -31,9 +34,10 @@ The codebase includes both educational implementations (showing the math and ope
 1. [Usage Guide](#usage-guide)
 2. [Key Concepts](#key-concepts)
 3. [Pre-Training Pipeline](#pre-training-pipeline)
-4. [Inference and Sampling](#inference-and-sampling)
-5. [Core Components Deep Dive](#core-components-deep-dive)
-6. [Resources](#resources)
+4. [Fine-Tuning Pipeline](#fine-tuning-pipeline)
+5. [Inference and Sampling](#inference-and-sampling)
+6. [Core Components Deep Dive](#core-components-deep-dive)
+7. [Resources](#resources)
 
 ---
 
@@ -51,7 +55,8 @@ uv run --with streamlit streamlit run main.py
 The app will open in your browser with the following pages:
 - **Main**: Overview and this README
 - **Pre-Training Page**: Configure and pre-train models with a visual interface
-- **Inference Page**: Generate text from trained models
+- **Fine-Tuning Page**: Fine-tune pre-trained models on prompt/response pairs
+- **Inference Page**: Generate text from trained models (pre-trained or fine-tuned)
 
 ### Pre-Training
 
@@ -110,6 +115,9 @@ uv run cli/train.py --no_einops
 ### UI
 
 1. Select a checkpoint from the dropdown (auto-scans `checkpoints/` directory)
+   - Shows both pre-trained and fine-tuned checkpoints
+   - Clearly labeled: "🏁 Final Model (Pre-trained)" vs "🏁 Final Model (Fine-tuned)"
+   - Fine-tuned models are in `checkpoints/{timestamp}/sft/` subdirectories
 2. Enter a prompt
 3. Configure sampling parameters (temperature, top-k, top-p)
 4. Click "Generate" to create text
@@ -191,15 +199,25 @@ At each position, the model predicts what comes next. This is how language model
 
 ### 6. Pre-training vs Fine-tuning
 
-**Pre-training** (what this codebase does):
+**Pre-training**:
 - Train on large, diverse text corpus
 - Learn general language patterns
 - Unsupervised (no labels needed)
+- Example: Train on Wikipedia, books, web text
 
-**Fine-tuning** (not included):
+**Supervised Fine-Tuning (SFT)**:
 - Take pre-trained model
-- Train further on specific task/domain
-- Supervised (needs labeled data)
+- Train further on prompt/response pairs
+- Supervised (needs labeled data: prompt → response)
+- Lower learning rate (typically 10-100x lower)
+- Shorter training (1-5 epochs vs 10+)
+- **Loss masking**: Only compute loss on response tokens, not prompt tokens
+- Example: Train on instruction-following datasets
+
+**Why Fine-Tune?**
+- Pre-trained models learn general language but may not follow instructions well
+- Fine-tuning teaches the model to respond appropriately to prompts
+- Makes the model more useful for specific tasks (Q&A, instruction following, etc.)
 
 ---
 
@@ -306,9 +324,125 @@ optimizer.step()
 
 ---
 
+## Fine-Tuning Pipeline
+
+### 1. Data Loading (`finetuning/data/sft_dataset.py`)
+
+**Purpose**: Load prompt/response pairs from CSV and create training sequences with loss masks.
+
+#### Process
+
+1. **Load CSV**: Read CSV file with `prompt` and `response` columns
+2. **Tokenize**: Convert prompts and responses to token IDs
+3. **Create Sequences**: Concatenate prompt + response
+4. **Create Masks**: 0 for prompt tokens, 1 for response tokens
+5. **Shift by 1**: Create input/target pairs (same as pre-training)
+6. **Split**: Train/validation split (default 90/10)
+
+#### Code Flow
+
+```python
+# Load CSV
+df = pd.read_csv("finetuning.csv")
+prompts = df['prompt'].tolist()
+responses = df['response'].tolist()
+
+# For each pair
+for prompt, response in zip(prompts, responses):
+    # Tokenize
+    prompt_tokens = tokenizer.encode(prompt)  # [prompt_len]
+    response_tokens = tokenizer.encode(response)  # [response_len]
+    
+    # Concatenate
+    full_tokens = prompt_tokens + response_tokens  # [prompt_len + response_len]
+    
+    # Create mask: 0 for prompt, 1 for response
+    mask = [0] * len(prompt_tokens) + [1] * len(response_tokens)
+    
+    # Shift by 1 (same as pre-training)
+    input_seq = full_tokens[:-1]  # [seq_len-1]
+    target_seq = full_tokens[1:]   # [seq_len-1]
+    mask_seq = mask[1:]            # [seq_len-1]
+
+# X: [num_sequences, seq_len-1] - input sequences
+# Y: [num_sequences, seq_len-1] - target sequences
+# masks: [num_sequences, seq_len-1] - loss masks (1 for response, 0 for prompt)
+```
+
+**Why Mask Prompt Tokens?**
+- We want the model to learn to generate responses, not repeat prompts
+- Computing loss on prompt tokens would teach the model to copy the prompt
+- Masking ensures we only learn from the response tokens
+
+### 2. Training Loop (`finetuning/training/sft_trainer.py`)
+
+**Purpose**: Fine-tune the pre-trained model using masked loss.
+
+#### Key Differences from Pre-Training
+
+1. **Masked Loss**: Only compute loss on response tokens
+2. **Lower Learning Rate**: Typically 1e-5 (vs 1e-3 for pre-training)
+3. **Shorter Training**: 1-5 epochs (vs 10+ for pre-training)
+4. **Structured Data**: Prompt/response pairs instead of raw text
+
+#### Training Step
+
+```python
+# 1. Get random batch
+idx = torch.randint(0, len(X_train), (batch_size,))
+x_batch = X_train[idx]  # [batch_size, seq_len]
+y_batch = Y_train[idx]   # [batch_size, seq_len]
+masks_batch = masks_train[idx]  # [batch_size, seq_len]
+
+# 2. Forward pass
+logits = model(x_batch)  # [batch_size, seq_len, vocab_size]
+
+# 3. Compute masked loss
+logits_flat = logits.view(-1, vocab_size)  # [batch*seq, vocab]
+targets_flat = y_batch.view(-1)            # [batch*seq]
+masks_flat = masks_batch.view(-1)          # [batch*seq]
+
+# Compute loss per token
+loss_unmasked = F.cross_entropy(
+    logits_flat, targets_flat, reduction='none'
+)  # [batch*seq]
+
+# Apply mask: only average over response tokens (where mask == 1)
+loss = (loss_unmasked * masks_flat).sum() / masks_flat.sum().clamp(min=1)
+
+# 4. Backward pass
+optimizer.zero_grad()
+loss.backward()
+optimizer.step()
+```
+
+**Loss Explanation**:
+- `loss_unmasked`: Loss for every token position
+- `masks_flat`: 1 for response tokens, 0 for prompt tokens
+- `loss_unmasked * masks_flat`: Zero out prompt token losses
+- `sum() / masks_flat.sum()`: Average only over response tokens
+
+**Why Lower Learning Rate?**
+- Pre-trained weights are already good
+- We want small adjustments, not large changes
+- Prevents catastrophic forgetting of pre-trained knowledge
+
+### 3. Checkpoint Organization
+
+**Pre-trained checkpoints**: `checkpoints/{timestamp}/final_model.pt`
+**Fine-tuned checkpoints**: `checkpoints/{timestamp}/sft/final_model.pt`
+
+Both checkpoints are visible in the inference page, clearly labeled:
+- "🏁 Final Model (Pre-trained)"
+- "🏁 Final Model (Fine-tuned)"
+
+---
+
 ## Inference and Sampling
 
 ### Text Generation (`inference/sampler.py`)
+
+**Note**: The inference page supports both pre-trained and fine-tuned models. Fine-tuned models are often better at following instructions and generating appropriate responses to prompts.
 
 **Purpose**: Generate text from a trained model.
 

@@ -53,13 +53,14 @@ def scan_checkpoints():
     checkpoints = []
     for checkpoint_dir in sorted(checkpoints_dir.iterdir(), reverse=True):
         if checkpoint_dir.is_dir():
-            # Look for final_model.pt first, then any checkpoint_*.pt
+            # Check for pre-trained checkpoints
             final_model = checkpoint_dir / "final_model.pt"
             if final_model.exists():
                 checkpoints.append({
                     "path": str(final_model),
                     "name": f"{checkpoint_dir.name} (final)",
-                    "timestamp": checkpoint_dir.name
+                    "timestamp": checkpoint_dir.name,
+                    "is_finetuned": False
                 })
             else:
                 # Get all checkpoint files
@@ -67,8 +68,30 @@ def scan_checkpoints():
                     checkpoints.append({
                         "path": str(ckpt_file),
                         "name": f"{checkpoint_dir.name} / {ckpt_file.stem}",
-                        "timestamp": checkpoint_dir.name
+                        "timestamp": checkpoint_dir.name,
+                        "is_finetuned": False
                     })
+            
+            # Check for fine-tuned checkpoints in sft/ subdirectory
+            sft_dir = checkpoint_dir / "sft"
+            if sft_dir.exists():
+                sft_final = sft_dir / "final_model.pt"
+                if sft_final.exists():
+                    checkpoints.append({
+                        "path": str(sft_final),
+                        "name": f"{checkpoint_dir.name} / sft (final)",
+                        "timestamp": checkpoint_dir.name,
+                        "is_finetuned": True
+                    })
+                else:
+                    # Get all SFT checkpoint files
+                    for ckpt_file in sorted(sft_dir.glob("checkpoint_*.pt"), reverse=True):
+                        checkpoints.append({
+                            "path": str(ckpt_file),
+                            "name": f"{checkpoint_dir.name} / sft / {ckpt_file.stem}",
+                            "timestamp": checkpoint_dir.name,
+                            "is_finetuned": True
+                        })
 
     return checkpoints
 
@@ -89,4 +112,5 @@ if "load_model_from_checkpoint" not in st.session_state:
 # Note: Training and Inference pages are in the pages/ directory
 # Streamlit automatically creates navigation for files in pages/
 # - pages/1_Pre-Training.py: Pre-training page
-# - pages/2_Inference.py: Inference page
+# - pages/2_Fine-Tuning.py: Fine-tuning (SFT) page
+# - pages/3_Inference.py: Inference page
