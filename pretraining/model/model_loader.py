@@ -33,6 +33,24 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> Tu
     cfg = _extract_config(checkpoint)
     model_type = checkpoint.get("model_type", "with_einops")
     model = _create_model(cfg, model_type)
+    
+    # Check if this is a LoRA checkpoint
+    use_lora = checkpoint.get("use_lora", False)
+    if use_lora:
+        lora_info = checkpoint.get("lora_info", {})
+        # Apply LoRA before loading weights
+        try:
+            from finetuning.peft.lora_utils import convert_model_to_lora
+            model = convert_model_to_lora(
+                model,
+                rank=lora_info.get("lora_rank", 8),
+                alpha=lora_info.get("lora_alpha", 8.0),
+                dropout=lora_info.get("lora_dropout", 0.0),
+                target_modules=lora_info.get("lora_target_modules", "all"),
+            )
+        except ImportError:
+            print("Warning: LoRA checkpoint detected but LoRA modules not available")
+    
     _load_state_dict(model, checkpoint, device)
     
     model = model.to(device)

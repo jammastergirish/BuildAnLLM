@@ -15,4 +15,10 @@ class FinetuningArgs:
     save_interval: int = 500
     eval_iters: int = 50
     warmup_steps: int = 100  # Optional: learning rate warmup
+    # LoRA parameters
+    use_lora: bool = False
+    lora_rank: int = 8
+    lora_alpha: float = 8.0
+    lora_dropout: float = 0.0
+    lora_target_modules: str = "all"  # "all", "attention", "mlp", or list
 

@@ -35,19 +35,42 @@ def _start_finetuning_workflow(
     eval_interval,
     save_interval,
     max_length,
+    use_lora,
+    lora_rank,
+    lora_alpha,
+    lora_dropout,
+    lora_target_modules,
 ):
     """Start the fine-tuning workflow."""
     device = st.session_state.get_device()
-    
+
     # Load pre-trained model
     with st.spinner("Loading pre-trained model..."):
         model, cfg, checkpoint = st.session_state.load_model_from_checkpoint(
             selected_checkpoint_path, device
         )
         model.train()  # Set to training mode
-    
+
+    # Apply LoRA if selected
+    if use_lora:
+        with st.spinner("Applying LoRA adapters..."):
+            from finetuning.peft.lora_utils import convert_model_to_lora, count_lora_parameters
+            model = convert_model_to_lora(
+                model,
+                rank=lora_rank,
+                alpha=lora_alpha,
+                dropout=lora_dropout,
+                target_modules=lora_target_modules,
+            )
+            param_counts = count_lora_parameters(model)
+            st.success(
+                f"✅ LoRA applied! Training {param_counts['lora']:,} LoRA parameters "
+                f"({param_counts['lora']/param_counts['total']*100:.2f}% of total). "
+                f"{param_counts['frozen']:,} base parameters frozen."
+            )
+
     tokenizer_type = checkpoint.get("tokenizer_type", "character")
-    
+
     # Create tokenizer (must match pre-trained model)
     if tokenizer_type == "character":
         if os.path.exists("training.txt"):
@@ -64,7 +87,8 @@ def _start_finetuning_workflow(
             vocab_size = cfg.d_vocab if hasattr(cfg, 'd_vocab') else 1000
             tokenizer = SimpleBPETokenizer(text, vocab_size=vocab_size)
         else:
-            st.error("training.txt not found. Cannot recreate Simple BPE tokenizer.")
+            st.error(
+                "training.txt not found. Cannot recreate Simple BPE tokenizer.")
             st.stop()
     elif tokenizer_type == "bpe-tiktoken" or tokenizer_type == "bpe":
         tokenizer = BPETokenizer()
@@ -75,12 +99,13 @@ def _start_finetuning_workflow(
             vocab_size = cfg.d_vocab if hasattr(cfg, 'd_vocab') else 10000
             tokenizer = SentencePieceTokenizer(text, vocab_size=vocab_size)
         else:
-            st.error("training.txt not found. Cannot recreate SentencePiece tokenizer.")
+            st.error(
+                "training.txt not found. Cannot recreate SentencePiece tokenizer.")
             st.stop()
     else:
         st.error(f"Tokenizer type {tokenizer_type} not supported.")
         st.stop()
-    
+
     # Save CSV temporarily (use default if no upload)
     csv_path = "temp_sft_data.csv"
     if uploaded_csv:
@@ -97,7 +122,7 @@ def _start_finetuning_workflow(
     else:
         st.error("No CSV file provided and finetuning.csv not found.")
         st.stop()
-    
+
     # Create SFT dataset
     with st.spinner("Creating fine-tuning dataset..."):
         dataset = SFTDataset(
@@ -106,16 +131,16 @@ def _start_finetuning_workflow(
             max_length=max_length,
         )
         dataset.print_info()
-    
+
     X_train, Y_train, masks_train = dataset.get_train_data()
     X_val, Y_val, masks_val = dataset.get_val_data()
-    
+
     # Create save directory: checkpoints/{timestamp}/sft/
     checkpoint_dir = Path(selected_checkpoint_path).parent
     timestamp = checkpoint_dir.name
     sft_dir = checkpoint_dir / "sft"
     sft_dir.mkdir(exist_ok=True)
-    
+
     # Training args
     training_args = FinetuningArgs(
         batch_size=batch_size,
@@ -126,8 +151,13 @@ def _start_finetuning_workflow(
         save_dir=str(sft_dir),
         save_interval=save_interval,
         eval_iters=50,
+        use_lora=use_lora,
+        lora_rank=lora_rank if use_lora else 8,
+        lora_alpha=lora_alpha if use_lora else 8.0,
+        lora_dropout=lora_dropout if use_lora else 0.0,
+        lora_target_modules=lora_target_modules if use_lora else "all",
     )
-    
+
     # Create trainer
     trainer = SFTTrainer(
         model=model,
@@ -142,7 +172,7 @@ def _start_finetuning_workflow(
         eval_interval=eval_interval,
         tokenizer_type=tokenizer_type,
     )
-    
+
     # Initialize training state
     st.session_state.shared_loss_data = {
         "iterations": [], "train_losses": [], "val_losses": []
@@ -150,7 +180,7 @@ def _start_finetuning_workflow(
     st.session_state.shared_training_logs.clear()
     st.session_state.training_active = True
     st.session_state.trainer = trainer
-    
+
     training_active_flag = [True]
     progress_data = {
         "iter": 0,
@@ -164,7 +194,7 @@ def _start_finetuning_workflow(
             "running_losses": []
         }
     }
-    
+
     # Start training thread
     thread = threading.Thread(
         target=train_sft_model_thread,
@@ -182,7 +212,7 @@ def _start_finetuning_workflow(
     st.session_state.training_thread = thread
     st.session_state.training_active_flag = training_active_flag
     st.session_state.progress_data = progress_data
-    
+
     st.success("Fine-tuning started! Check the visualization below.")
     time.sleep(0.5)
     st.rerun()
@@ -401,8 +431,62 @@ selected_checkpoint = render_checkpoint_selector(
     no_checkpoints_message="No pre-trained checkpoints found. Please pre-train a model first."
 )
 
+# Fine-tuning method selection
+st.header("2. Fine-Tuning Method")
+fine_tuning_method = st.radio(
+    "Select fine-tuning method",
+    ["Full Parameter Fine-Tuning", "LoRA (Parameter-Efficient)"],
+    help="Full Parameter: Updates all model weights. LoRA: Only trains small adapter matrices (faster, less memory)."
+)
+
+# LoRA options (only show if LoRA selected)
+use_lora = fine_tuning_method == "LoRA (Parameter-Efficient)"
+lora_rank = 8
+lora_alpha = 8.0
+lora_dropout = 0.0
+lora_target_modules = "all"
+
+if use_lora:
+    with st.expander("LoRA Configuration", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            lora_rank = st.number_input(
+                "LoRA Rank (r)",
+                min_value=1,
+                max_value=128,
+                value=8,
+                help="Dimension of low-rank matrices. Higher = more parameters, more capacity. Typical: 4-16"
+            )
+            lora_alpha = st.number_input(
+                "LoRA Alpha (α)",
+                min_value=1.0,
+                max_value=256.0,
+                value=8.0,
+                help="Scaling factor. Typically set equal to rank. Higher = stronger LoRA influence."
+            )
+        with col2:
+            lora_dropout = st.number_input(
+                "LoRA Dropout",
+                min_value=0.0,
+                max_value=0.5,
+                value=0.0,
+                step=0.05,
+                format="%.2f",
+                help="Dropout rate for LoRA adapters. Helps prevent overfitting."
+            )
+            lora_target_modules = st.selectbox(
+                "Target Modules",
+                ["all", "attention", "mlp"],
+                help="Which layers to apply LoRA to. 'all' applies to both attention and MLP layers."
+            )
+
+        st.info(
+            f"💡 LoRA will train ~{lora_rank * 2} parameters per weight matrix "
+            f"(rank={lora_rank}). This is much smaller than full fine-tuning!"
+        )
+
 # CSV upload
-st.header("2. Upload Training Data")
+st.header("3. Upload Training Data")
 uploaded_csv = st.file_uploader(
     "Upload CSV file",
     type=["csv"],
@@ -412,13 +496,15 @@ uploaded_csv = st.file_uploader(
 # Use default file if no upload
 if uploaded_csv is None:
     if os.path.exists("finetuning.csv"):
-        st.info("📄 Using default finetuning.csv file. Upload a different file to override.")
+        st.info(
+            "📄 Using default finetuning.csv file. Upload a different file to override.")
         # Preview default CSV
         df = pd.read_csv("finetuning.csv")
         st.dataframe(df.head(), use_container_width=True)
         st.caption(f"Total rows: {len(df)}")
     else:
-        st.warning("No CSV file uploaded and finetuning.csv not found. Please upload a CSV file.")
+        st.warning(
+            "No CSV file uploaded and finetuning.csv not found. Please upload a CSV file.")
 else:
     # Preview uploaded CSV
     df = pd.read_csv(uploaded_csv)
@@ -426,10 +512,11 @@ else:
     st.caption(f"Total rows: {len(df)}")
 
 # Hyperparameters
-st.header("3. Fine-Tuning Hyperparameters")
+st.header("4. Fine-Tuning Hyperparameters")
 col1, col2 = st.columns(2)
 with col1:
-    batch_size = st.number_input("Batch Size", min_value=1, max_value=32, value=4)
+    batch_size = st.number_input(
+        "Batch Size", min_value=1, max_value=32, value=4)
     learning_rate = st.number_input(
         "Learning Rate", min_value=1e-6, max_value=1e-3, value=1e-5, format="%.6f"
     )
@@ -454,7 +541,7 @@ max_length = st.number_input(
 )
 
 # Start fine-tuning button
-st.header("4. Start Fine-Tuning")
+st.header("5. Start Fine-Tuning")
 col1, col2, col3 = st.columns([1, 1, 2])
 
 with col1:
@@ -486,8 +573,12 @@ if start_finetuning:
             eval_interval,
             save_interval,
             max_length,
+            use_lora,
+            lora_rank,
+            lora_alpha,
+            lora_dropout,
+            lora_target_modules,
         )
 
 # Display training status
 _display_training_status()
-

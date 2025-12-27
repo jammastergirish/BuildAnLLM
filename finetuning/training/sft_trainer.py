@@ -68,8 +68,16 @@ class SFTTrainer:
         self.tokenizer_type = tokenizer_type
         
         # Setup optimizer (lower learning rate than pre-training)
+        # If using LoRA, only optimize LoRA parameters
+        if hasattr(args, 'use_lora') and args.use_lora:
+            from finetuning.peft.lora_utils import get_lora_parameters
+            trainable_params = get_lora_parameters(self.model)
+            print(f"Optimizing {len(trainable_params)} LoRA parameter groups")
+        else:
+            trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+        
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+            trainable_params, lr=args.lr, weight_decay=args.weight_decay
         )
         
         # Calculate max_iters
@@ -263,20 +271,40 @@ class SFTTrainer:
         # Determine model type
         model_type = "with_einops" if "WithEinops" in self.model.__class__.__name__ else "without_einops"
         
-        torch.save(
-            {
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "iter_num": iter_num,
-                "running_loss": self.running_loss,
-                "args": self.args,
-                "cfg": cfg_dict,
-                "model_type": model_type,
-                "tokenizer_type": self.tokenizer_type,
-                "is_finetuned": True,  # Mark as fine-tuned
-            },
-            filepath,
-        )
+        # Get state dict
+        model_state_dict = self.model.state_dict()
+        
+        # If using LoRA, also save LoRA-specific info
+        lora_info = None
+        if hasattr(self.args, 'use_lora') and self.args.use_lora:
+            from finetuning.peft.lora_utils import get_lora_parameters, count_lora_parameters
+            param_counts = count_lora_parameters(self.model)
+            lora_info = {
+                "lora_rank": self.args.lora_rank,
+                "lora_alpha": self.args.lora_alpha,
+                "lora_dropout": self.args.lora_dropout,
+                "lora_target_modules": self.args.lora_target_modules,
+                "lora_param_count": param_counts['lora'],
+            }
+        
+        checkpoint_data = {
+            "model_state_dict": model_state_dict,
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "iter_num": iter_num,
+            "running_loss": self.running_loss,
+            "args": self.args,
+            "cfg": cfg_dict,
+            "model_type": model_type,
+            "tokenizer_type": self.tokenizer_type,
+            "is_finetuned": True,  # Mark as fine-tuned
+        }
+        
+        # Add LoRA info if present
+        if lora_info:
+            checkpoint_data["lora_info"] = lora_info
+            checkpoint_data["use_lora"] = True
+        
+        torch.save(checkpoint_data, filepath)
         if not is_final:
             print(f"Checkpoint saved: {filepath}")
 
