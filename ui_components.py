@@ -635,6 +635,135 @@ def render_model_equations(config: Dict) -> None:
         """)
 
 
+def render_finetuning_equations(use_lora: bool = False, lora_rank: int = 8, lora_alpha: float = 8.0) -> None:
+    """Render mathematical equations for supervised fine-tuning."""
+    with st.expander("📐 Equations", expanded=False):
+        st.markdown("### Key Notation")
+        st.markdown("""
+        - **prompt**: Input text/question/instruction
+        - **response**: Desired output/answer
+        - **m**: Loss mask (1 for response tokens, 0 for prompt tokens)
+        - **W**: Base weight matrix (frozen if using LoRA)
+        - **A, B**: LoRA adapter matrices (trainable)
+        - **r**: LoRA rank
+        - **α**: LoRA alpha (scaling factor)
+        """)
+
+        st.markdown("---")
+        st.markdown("### 1. Sequence Construction")
+        st.markdown("Each training example combines prompt and response:")
+        st.latex(
+            r"\text{sequence} = [\text{prompt\_tokens}] + [\text{response\_tokens}]")
+        st.markdown(
+            "After tokenization and shifting (for next-token prediction):")
+        st.latex(r"X = [t_0, t_1, \ldots, t_{L-2}] \quad \text{(input)}")
+        st.latex(
+            r"Y = [t_1, t_2, \ldots, t_{L-1}] \quad \text{(target, shifted by 1)}")
+        st.markdown("where $L$ is the sequence length (prompt + response).")
+
+        st.markdown("---")
+        st.markdown("### 2. Loss Masking (Key Difference from Pre-Training)")
+        st.markdown("**Loss Mask Definition:**")
+        st.latex(
+            r"m_i = \begin{cases} 1 & \text{if token } i \text{ is in response} \\ 0 & \text{if token } i \text{ is in prompt} \end{cases}")
+        st.markdown("**Why Mask?**")
+        st.markdown("""
+        - Prevents model from learning to repeat the prompt
+        - Focuses learning on generating good responses
+        - Teaches the model to generate, not copy
+        """)
+
+        st.markdown("**Masked Loss Computation:**")
+        st.latex(
+            r"\text{logits} = \text{model}(X) \quad \text{logits} \in \mathbb{R}^{B \times L \times V}")
+        st.latex(
+            r"\mathcal{L}_{\text{unmasked}} = -\log p_i(t_i | t_0, \ldots, t_{i-1}) \quad \text{(loss per token)}")
+        st.latex(
+            r"\mathcal{L} = \frac{\sum_{i=1}^{L} m_i \cdot \mathcal{L}_{\text{unmasked}, i}}{\sum_{i=1}^{L} m_i}")
+        st.markdown(
+            "**In words:** Average loss only over response tokens (where $m_i = 1$).")
+
+        st.markdown("---")
+        st.markdown("### 3. Training Objective")
+
+        if use_lora:
+            st.markdown("**LoRA Fine-Tuning:**")
+            st.markdown("Only LoRA adapter matrices $A$ and $B$ are trained:")
+            st.latex(r"A^*, B^* = \arg\min_{A, B} \mathcal{L}(A, B)")
+            st.markdown("where base weights $W$ are frozen. Updates:")
+            st.latex(r"A_{t+1} = A_t - \eta \nabla_A \mathcal{L}(A_t, B_t)")
+            st.latex(r"B_{t+1} = B_t - \eta \nabla_B \mathcal{L}(A_t, B_t)")
+            st.markdown(
+                "where $\\eta$ (learning rate) is typically **10-100x lower** than pre-training (e.g., $10^{-5}$ vs $10^{-3}$).")
+            st.markdown(
+                "**Note:** Base weights $W$ remain frozen and are not updated.")
+        else:
+            st.markdown("**Full Parameter Fine-Tuning:**")
+            st.latex(r"\theta^* = \arg\min_{\theta} \mathcal{L}(\theta)")
+            st.markdown(
+                "where $\\theta$ are all model parameters, updated with:")
+            st.latex(
+                r"\theta_{t+1} = \theta_t - \eta \nabla_{\theta} \mathcal{L}(\theta_t)")
+            st.markdown(
+                "where $\\eta$ (learning rate) is typically **10-100x lower** than pre-training (e.g., $10^{-5}$ vs $10^{-3}$).")
+
+        if use_lora:
+            st.markdown("---")
+            st.markdown("### 4. LoRA (Low-Rank Adaptation)")
+            st.markdown(
+                "**LoRA modifies weight matrices with low-rank adapters:**")
+            st.latex(
+                r"W_{\text{effective}} = W + \frac{\alpha}{r} \cdot (B \cdot A)")
+            st.markdown("where:")
+            st.latex(
+                r"W \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}} \quad \text{(frozen base weights)}")
+            st.latex(
+                r"A \in \mathbb{R}^{r \times d_{\text{in}}} \quad \text{(trainable, initialized with Kaiming)}")
+            st.latex(
+                r"B \in \mathbb{R}^{d_{\text{out}} \times r} \quad \text{(trainable, initialized to zero)}")
+            st.markdown(
+                f"where $r = {lora_rank}$ (rank), $\\alpha = {lora_alpha}$ (scaling factor).")
+
+            st.markdown("**Forward Pass with LoRA:**")
+            st.latex(
+                r"\text{output} = x \cdot W^T + \frac{\alpha}{r} \cdot (x \cdot A^T \cdot B^T)")
+            st.markdown("**Benefits:**")
+            st.markdown("""
+            - **Parameter efficiency**: Only $2 \\times r \\times d$ parameters per weight matrix (vs $d_{\\text{out}} \\times d_{\\text{in}}$)
+            - **Memory efficient**: Base weights $W$ are frozen
+            - **Fast training**: Fewer parameters to update
+            """)
+
+        st.markdown("---")
+        st.markdown("### 5. Comparison: Pre-Training vs Fine-Tuning")
+        st.markdown("""
+        | Aspect | Pre-Training | Fine-Tuning |
+        |--------|-------------|-------------|
+        | **Data** | Raw text | Prompt/response pairs |
+        | **Loss** | All tokens | Only response tokens (masked) |
+        | **Learning Rate** | Higher (e.g., $10^{-3}$) | Lower (e.g., $10^{-5}$) |
+        | **Epochs** | Many (10+) | Few (1-5) |
+        | **Objective** | Learn language patterns | Learn instruction following |
+        """)
+
+        st.markdown("---")
+        st.markdown("### Summary")
+        if use_lora:
+            st.markdown(f"""
+            **Your Configuration:**
+            - **Method**: LoRA (Parameter-Efficient Fine-Tuning)
+            - **LoRA Rank**: $r = {lora_rank}$
+            - **LoRA Alpha**: $\\alpha = {lora_alpha}$
+            - **Scaling**: $\\alpha/r = {lora_alpha/lora_rank:.2f}$
+            """)
+        else:
+            st.markdown("""
+            **Your Configuration:**
+            - **Method**: Full Parameter Fine-Tuning
+            - All model parameters are updated
+            """)
+
+
 def parse_timestamp(timestamp_str: str) -> str:
     """Parse YYYYMMDDHHMMSS format to readable datetime string."""
     try:

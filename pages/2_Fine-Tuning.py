@@ -21,7 +21,7 @@ from finetuning.training.sft_trainer import SFTTrainer
 from finetuning.training.finetuning_args import FinetuningArgs
 from finetuning.training.sft_training_ui import train_sft_model_thread
 from pretraining.training.training_ui import initialize_training_state
-from ui_components import render_checkpoint_selector
+from ui_components import render_checkpoint_selector, render_finetuning_equations
 
 
 def _start_finetuning_workflow(
@@ -484,6 +484,13 @@ if use_lora:
             f"💡 LoRA will train ~{lora_rank * 2} parameters per weight matrix "
             f"(rank={lora_rank}). This is much smaller than full fine-tuning!"
         )
+
+# Show equations (after LoRA config so values are available)
+render_finetuning_equations(
+    use_lora=use_lora,
+    lora_rank=lora_rank,
+    lora_alpha=lora_alpha,
+)
 
 # CSV upload
 st.header("3. Upload Training Data")
