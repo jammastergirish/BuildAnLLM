@@ -65,6 +65,243 @@ def get_total_training_time() -> float:
         return time.time() - st.session_state.training_start_time
 
 
+def render_training_metrics(
+    current_iter: int,
+    current_loss: float,
+    running_loss: float,
+    val_loss: Optional[float],
+    progress: float,
+    max_iters: int
+) -> None:
+    """Render training metrics with Timing first, then Performance.
+    
+    Args:
+        current_iter: Current iteration number
+        current_loss: Current loss value
+        running_loss: Running average loss
+        val_loss: Validation loss (can be None)
+        progress: Training progress (0.0 to 1.0)
+        max_iters: Maximum number of iterations (can be int or string like '?')
+    """
+    elapsed_time = get_elapsed_time()
+    
+    # Timing metrics first
+    st.markdown("#### ⏱️ Timing")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Progress", f"{progress*100:.1f}%")
+    with col2:
+        st.metric("Elapsed Time", format_elapsed_time(elapsed_time))
+    with col3:
+        if elapsed_time > 0 and current_iter > 0 and isinstance(max_iters, int):
+            iter_per_sec = current_iter / elapsed_time
+            eta_seconds = (max_iters - current_iter) / iter_per_sec
+            eta_str = format_elapsed_time(eta_seconds) if eta_seconds > 0 else "Calculating..."
+            st.metric("Est. Time Remaining", eta_str)
+        else:
+            st.metric("Est. Time Remaining", "Calculating...")
+    
+    # Performance metrics below
+    st.markdown("#### 📈 Performance")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        delta_loss = None
+        if running_loss > 0 and current_loss > 0:
+            delta_loss = f"{running_loss - current_loss:.4f}"
+        st.metric("Current Loss", f"{current_loss:.4f}", delta=delta_loss)
+    with col2:
+        st.metric("Running Avg Loss", f"{running_loss:.4f}")
+    with col3:
+        val_delta = None
+        if val_loss is not None and running_loss > 0:
+            val_delta = "↓" if val_loss < running_loss else "↑"
+        st.metric(
+            "Val Loss",
+            f"{val_loss:.4f}" if val_loss is not None else "Pending...",
+            delta=val_delta
+        )
+
+
+def render_all_losses_graph(all_losses_data: Dict, training_type: str = "Training") -> None:
+    """Render all losses graph with enhanced styling.
+    
+    Args:
+        all_losses_data: Dictionary with 'iterations', 'current_losses', 'running_losses'
+        training_type: Type of training ("Training" or "Fine-Tuning") for title customization
+    """
+    import pandas as pd
+    import plotly.graph_objects as go
+    
+    st.subheader("📈 Training Loss")
+    
+    # Add summary stats above graph
+    if all_losses_data["current_losses"]:
+        latest_loss = all_losses_data["current_losses"][-1]
+        min_loss = min(all_losses_data["current_losses"])
+        if len(all_losses_data["current_losses"]) > 10:
+            recent_avg = sum(all_losses_data["current_losses"][-10:]) / 10
+            earlier_avg = sum(all_losses_data["current_losses"][-20:-10]) / 10 if len(
+                all_losses_data["current_losses"]) > 20 else recent_avg
+            loss_trend = "↓ Improving" if recent_avg < earlier_avg else "→ Stable"
+        else:
+            loss_trend = "→ Initializing"
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Latest Loss", f"{latest_loss:.4f}")
+        with col2:
+            st.metric("Best Loss", f"{min_loss:.4f}")
+        with col3:
+            st.metric("Trend", loss_trend)
+    
+    df_all = pd.DataFrame({
+        "Iteration": all_losses_data["iterations"],
+        "Current Loss": all_losses_data["current_losses"],
+        "Running Avg Loss": all_losses_data["running_losses"]
+    })
+
+    fig_all = go.Figure()
+    fig_all.add_trace(go.Scatter(
+        x=df_all["Iteration"], y=df_all["Current Loss"],
+        mode="lines", name="Current Loss",
+        line={"color": "orange", "width": 1}, opacity=0.7
+    ))
+    fig_all.add_trace(go.Scatter(
+        x=df_all["Iteration"], y=df_all["Running Avg Loss"],
+        mode="lines", name="Running Avg Loss",
+        line={"color": "purple", "width": 2}
+    ))
+    
+    title = f"{training_type} Losses (updated every 10 iterations)"
+    fig_all.update_layout(
+        title=title,
+        xaxis_title="Iteration", yaxis_title="Loss",
+        hovermode="x unified", height=400,
+        yaxis={"range": [0, None]},
+        template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly"
+    )
+    st.plotly_chart(fig_all, use_container_width=True)
+
+
+def render_eval_losses_graph(loss_data: Dict) -> None:
+    """Render evaluation losses graph with enhanced styling.
+    
+    Args:
+        loss_data: Dictionary with 'iterations', 'train_losses', 'val_losses'
+    """
+    import pandas as pd
+    import plotly.graph_objects as go
+    
+    st.subheader("📊 Evaluation Losses (Train/Val)")
+    
+    # Add summary stats
+    if loss_data["train_losses"] and loss_data["val_losses"]:
+        latest_train = loss_data["train_losses"][-1]
+        latest_val = loss_data["val_losses"][-1]
+        gap = latest_val - latest_train
+        gap_status = "✓ Good" if gap < 0.5 else "⚠️ Large gap" if gap < 1.0 else "❌ Overfitting"
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Latest Train Loss", f"{latest_train:.4f}")
+        with col2:
+            st.metric("Latest Val Loss", f"{latest_val:.4f}")
+        with col3:
+            st.metric("Train-Val Gap", f"{gap:.4f}", delta=gap_status)
+    
+    df = pd.DataFrame({
+        "Iteration": loss_data["iterations"],
+        "Train Loss": loss_data["train_losses"],
+        "Val Loss": loss_data["val_losses"]
+    })
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["Iteration"], y=df["Train Loss"],
+        mode="lines+markers", name="Train Loss",
+        line={"color": "blue", "width": 2}
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["Iteration"], y=df["Val Loss"],
+        mode="lines+markers", name="Val Loss",
+        line={"color": "red", "width": 2}
+    ))
+    fig.update_layout(
+        title="Training and Validation Loss (evaluated every 500 iterations)",
+        xaxis_title="Iteration", yaxis_title="Loss",
+        hovermode="x unified", height=400,
+        template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_completed_training_ui(training_type: str = "Training") -> None:
+    """Render UI for completed training.
+    
+    Args:
+        training_type: Type of training ("Training" or "Fine-Tuning") for text customization
+    """
+    import pandas as pd
+    import plotly.graph_objects as go
+    
+    if st.session_state.loss_data["iterations"]:
+        # Calculate total elapsed time
+        total_time = get_total_training_time()
+
+        header_text = f"📊 Final {training_type} Results"
+        time_text = f"Total {training_type.lower()} time"
+        st.header(header_text)
+        if total_time > 0:
+            st.markdown(f"""
+            <div style='background-color: #17a2b8; color: white; padding: 12px 20px; 
+                        border-radius: 8px; margin: 10px 0; font-weight: 500;'>
+                ⏱️ {time_text}: <strong>{format_elapsed_time(total_time)}</strong>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Final metrics summary
+        if st.session_state.loss_data["train_losses"] and st.session_state.loss_data["val_losses"]:
+            final_train = st.session_state.loss_data["train_losses"][-1]
+            final_val = st.session_state.loss_data["val_losses"][-1]
+            best_train = min(st.session_state.loss_data["train_losses"])
+            best_val = min(st.session_state.loss_data["val_losses"])
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Final Train Loss", f"{final_train:.4f}")
+            with col2:
+                st.metric("Final Val Loss", f"{final_val:.4f}")
+            with col3:
+                st.metric("Best Train Loss", f"{best_train:.4f}")
+            with col4:
+                st.metric("Best Val Loss", f"{best_val:.4f}")
+        
+        df = pd.DataFrame({
+            "Iteration": st.session_state.loss_data["iterations"],
+            "Train Loss": st.session_state.loss_data["train_losses"],
+            "Val Loss": st.session_state.loss_data["val_losses"]
+        })
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df["Iteration"], y=df["Train Loss"],
+            mode="lines+markers", name="Train Loss",
+            line={"color": "blue", "width": 2}
+        ))
+        fig.add_trace(go.Scatter(
+            x=df["Iteration"], y=df["Val Loss"],
+            mode="lines+markers", name="Val Loss",
+            line={"color": "red", "width": 2}
+        ))
+        fig.update_layout(
+            title="Training and Validation Loss",
+            xaxis_title="Iteration", yaxis_title="Loss",
+            hovermode="x unified", height=400,
+            template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+
 # ============================================================================
 # Model Configuration
 # ============================================================================
@@ -136,14 +373,14 @@ def render_model_config_ui() -> Dict:
     # Preset buttons
     _render_preset_buttons(config)
 
+    # Model size selector (right after presets)
+    _render_model_size_selector(config)
+
     # Model components
     _render_model_components(config)
 
     # Model dimensions
     _render_model_dimensions(config)
-
-    # Model size selector
-    _render_model_size_selector(config)
 
     # RoPE settings (conditional)
     if config["positional_encoding"] == "rope":
@@ -273,22 +510,40 @@ def _render_model_dimensions(config: Dict) -> None:
 
 
 def _render_model_size_selector(config: Dict) -> None:
-    """Render model size selector."""
-    st.markdown("**Model Size Preset**")
-    model_size = st.selectbox(
-        "Size",
-        ["small", "medium", "full"],
-        index=["small", "medium", "full"].index(
-            config.get("model_size", "small")),
-        help="Selecting a size automatically updates all model dimensions below."
-    )
-
-    if config.get("model_size") != model_size:
-        config["model_size"] = model_size
-        apply_model_size_preset(model_size, config)
-        st.rerun()
-
-    config["model_size"] = model_size
+    """Render model size selector as buttons."""
+    st.subheader("Model Size Preset")
+    current_size = config.get("model_size", "small")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        button_type = "primary" if current_size == "small" else "secondary"
+        if st.button("🔹 Small", use_container_width=True, type=button_type,
+                     help="Small model: 256 dim, 4 heads, 4 layers"):
+            if current_size != "small":
+                config["model_size"] = "small"
+                apply_model_size_preset("small", config)
+                st.rerun()
+    
+    with col2:
+        button_type = "primary" if current_size == "medium" else "secondary"
+        if st.button("🔸 Medium", use_container_width=True, type=button_type,
+                     help="Medium model: 512 dim, 8 heads, 6 layers"):
+            if current_size != "medium":
+                config["model_size"] = "medium"
+                apply_model_size_preset("medium", config)
+                st.rerun()
+    
+    with col3:
+        button_type = "primary" if current_size == "full" else "secondary"
+        if st.button("🔶 Full", use_container_width=True, type=button_type,
+                     help="Full model: 768 dim, 12 heads, 12 layers"):
+            if current_size != "full":
+                config["model_size"] = "full"
+                apply_model_size_preset("full", config)
+                st.rerun()
+    
+    config["model_size"] = current_size
 
 
 def _render_rope_settings(config: Dict) -> None:

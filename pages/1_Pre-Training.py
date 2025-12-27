@@ -5,8 +5,6 @@ import os
 import threading
 import time
 from datetime import datetime
-import plotly.graph_objects as go
-import pandas as pd
 
 from config import ModelConfig, Architecture, PositionalEncoding, Normalization, Activation
 from pretraining.training.training_args import TransformerTrainingArgs
@@ -15,8 +13,10 @@ from pretraining.data.dataset import TransformerDataset
 from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
 from pretraining.training.training_ui import initialize_training_state, train_model_thread
 from ui_components import (
-    render_model_config_ui, render_model_architecture_diagram, render_model_equations, 
-    render_model_code_snippets, format_elapsed_time, get_elapsed_time, get_total_training_time
+    render_model_config_ui, render_model_architecture_diagram, render_model_equations,
+    render_model_code_snippets, format_elapsed_time, get_total_training_time,
+    render_training_metrics, render_all_losses_graph, render_eval_losses_graph,
+    render_completed_training_ui
 )
 
 
@@ -150,88 +150,35 @@ def _handle_training_completion(training_flag_active: bool):
     # Record end time
     if "training_start_time" in st.session_state and "training_end_time" not in st.session_state:
         st.session_state.training_end_time = time.time()
-    
+
     total_time = get_total_training_time()
-    
+
     if st.session_state.shared_training_logs:
         last_logs = list(st.session_state.shared_training_logs)[-3:]
         last_logs_str = " ".join(last_logs)
         if "Training complete!" in last_logs_str or "Completed all" in last_logs_str:
             st.session_state.training_active = False
-            st.success(f"✅ Training completed! Total time: {format_elapsed_time(total_time)}")
+            st.success(
+                f"✅ Training completed! Total time: {format_elapsed_time(total_time)}")
         elif "Error during training" in last_logs_str:
             st.session_state.training_active = False
             st.error("❌ Training error occurred. Check logs for details.")
         elif "Training stopped by user" in last_logs_str:
             st.session_state.training_active = False
-            st.info(f"⏹️ Training stopped by user. Elapsed time: {format_elapsed_time(total_time)}")
+            st.info(
+                f"⏹️ Training stopped by user. Elapsed time: {format_elapsed_time(total_time)}")
         elif not training_flag_active:
             st.session_state.training_active = False
-            st.success(f"✅ Training completed! Total time: {format_elapsed_time(total_time)}")
+            st.success(
+                f"✅ Training completed! Total time: {format_elapsed_time(total_time)}")
     elif not training_flag_active:
         st.session_state.training_active = False
-        st.success(f"✅ Training completed! Total time: {format_elapsed_time(total_time)}")
-
-
-def _render_all_losses_graph(all_losses_data):
-    """Render all losses graph."""
-    st.subheader("📈 Training Loss")
-    df_all = pd.DataFrame({
-        "Iteration": all_losses_data["iterations"],
-        "Current Loss": all_losses_data["current_losses"],
-        "Running Avg Loss": all_losses_data["running_losses"]
-    })
-
-    fig_all = go.Figure()
-    fig_all.add_trace(go.Scatter(
-        x=df_all["Iteration"], y=df_all["Current Loss"],
-        mode="lines", name="Current Loss",
-        line={"color": "orange", "width": 1}, opacity=0.7
-    ))
-    fig_all.add_trace(go.Scatter(
-        x=df_all["Iteration"], y=df_all["Running Avg Loss"],
-        mode="lines", name="Running Avg Loss",
-        line={"color": "purple", "width": 2}
-    ))
-    fig_all.update_layout(
-        title="Training Losses (updated every 10 iterations)",
-        xaxis_title="Iteration", yaxis_title="Loss",
-        hovermode="x unified", height=400,
-        yaxis={"range": [0, None]}
-    )
-    st.plotly_chart(fig_all, width='stretch')
-
-
-def _render_eval_losses_graph(loss_data):
-    """Render evaluation losses graph."""
-    st.subheader("📊 Evaluation Losses (Train/Val)")
-    df = pd.DataFrame({
-        "Iteration": loss_data["iterations"],
-        "Train Loss": loss_data["train_losses"],
-        "Val Loss": loss_data["val_losses"]
-    })
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df["Iteration"], y=df["Train Loss"],
-        mode="lines+markers", name="Train Loss",
-        line={"color": "blue"}
-    ))
-    fig.add_trace(go.Scatter(
-        x=df["Iteration"], y=df["Val Loss"],
-        mode="lines+markers", name="Val Loss",
-        line={"color": "red"}
-    ))
-    fig.update_layout(
-        title="Training and Validation Loss (evaluated every 500 iterations)",
-        xaxis_title="Iteration", yaxis_title="Loss",
-        hovermode="x unified", height=400
-    )
-    st.plotly_chart(fig, width='stretch')
+        st.success(
+            f"✅ Training completed! Total time: {format_elapsed_time(total_time)}")
 
 
 def _render_active_training_ui():
-    """Render UI for active training."""
+    """Render UI for active training with enhanced visuals."""
     if "progress_data" in st.session_state:
         progress_data = st.session_state.progress_data
         with st.session_state.training_lock:
@@ -241,25 +188,32 @@ def _render_active_training_ui():
             val_loss = progress_data.get("val_loss")
             progress = progress_data.get("progress", 0.0)
 
-        st.header("📊 Training Progress")
+        # Enhanced header with status indicator
+        status_col1, status_col2 = st.columns([3, 1])
+        with status_col1:
+            st.header("📊 Training Progress")
+        with status_col2:
+            st.markdown("""
+            <div style='background-color: #28a745; color: white; padding: 8px 16px; 
+                        border-radius: 20px; text-align: center; font-weight: bold; margin-top: 20px;'>
+                🟢 Training...
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Progress bar with better styling
+        max_iters = st.session_state.trainer.max_iters if st.session_state.trainer else '?'
         st.progress(
-            progress, text=f"Iteration {current_iter} / {st.session_state.trainer.max_iters if st.session_state.trainer else '?'}")
+            progress, text=f"Iteration {current_iter:,} / {max_iters:,}")
 
-        # Calculate elapsed time
-        elapsed_time = get_elapsed_time()
-
-        metric_cols = st.columns(5)
-        with metric_cols[0]:
-            st.metric("Current Loss", f"{current_loss:.4f}")
-        with metric_cols[1]:
-            st.metric("Running Avg", f"{running_loss:.4f}")
-        with metric_cols[2]:
-            st.metric(
-                "Val Loss", f"{val_loss:.4f}" if val_loss is not None else "Pending...")
-        with metric_cols[3]:
-            st.metric("Progress", f"{progress*100:.1f}%")
-        with metric_cols[4]:
-            st.metric("Elapsed Time", format_elapsed_time(elapsed_time))
+        # Enhanced metrics - Timing first, then Performance below
+        render_training_metrics(
+            current_iter=current_iter,
+            current_loss=current_loss,
+            running_loss=running_loss,
+            val_loss=val_loss,
+            progress=progress,
+            max_iters=max_iters
+        )
 
     # Get loss data (thread-safe)
     with st.session_state.training_lock:
@@ -284,10 +238,10 @@ def _render_active_training_ui():
 
     # Render graphs
     if all_losses_data and len(all_losses_data["iterations"]) > 0:
-        _render_all_losses_graph(all_losses_data)
+        render_all_losses_graph(all_losses_data, training_type="Training")
 
     if loss_data["iterations"]:
-        _render_eval_losses_graph(loss_data)
+        render_eval_losses_graph(loss_data)
         st.caption("💡 Page auto-refreshes every 2 seconds while training.")
         if st.session_state.training_active:
             time.sleep(2)
@@ -301,45 +255,13 @@ def _render_active_training_ui():
     # Training logs
     if training_logs:
         st.header("📝 Training Logs (Console Output)")
-        with st.expander("View All Logs", expanded=True):
+        has_error = any(
+            "Error" in log or "ERROR" in log for log in training_logs)
+        with st.expander("View All Logs", expanded=has_error):
             log_text = "\n".join(training_logs)
             st.text_area("Logs", value=log_text, height=400,
                          label_visibility="collapsed", disabled=True)
         st.caption(f"Showing {len(training_logs)} log entries")
-
-
-def _render_completed_training_ui():
-    """Render UI for completed training."""
-    if st.session_state.loss_data["iterations"]:
-        # Calculate total elapsed time
-        total_time = get_total_training_time()
-
-        st.header("📊 Final Training Results")
-        if total_time > 0:
-            st.info(f"⏱️ Total training time: **{format_elapsed_time(total_time)}**")
-        df = pd.DataFrame({
-            "Iteration": st.session_state.loss_data["iterations"],
-            "Train Loss": st.session_state.loss_data["train_losses"],
-            "Val Loss": st.session_state.loss_data["val_losses"]
-        })
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df["Iteration"], y=df["Train Loss"],
-            mode="lines+markers", name="Train Loss",
-            line={"color": "blue"}
-        ))
-        fig.add_trace(go.Scatter(
-            x=df["Iteration"], y=df["Val Loss"],
-            mode="lines+markers", name="Val Loss",
-            line={"color": "red"}
-        ))
-        fig.update_layout(
-            title="Training and Validation Loss",
-            xaxis_title="Iteration", yaxis_title="Loss",
-            hovermode="x unified"
-        )
-        st.plotly_chart(fig, width='stretch')
 
 
 def _display_training_status():
@@ -358,7 +280,31 @@ def _display_training_status():
     if st.session_state.training_active:
         _render_active_training_ui()
     else:
-        _render_completed_training_ui()
+        render_completed_training_ui(training_type="Training")
+
+
+def _render_quick_stats(model_config, batch_size, lr, epochs):
+    """Render quick statistics about the training configuration."""
+    # Calculate estimated parameters
+    d_model = model_config["d_model"]
+    n_layers = model_config["n_layers"]
+    d_mlp = model_config["d_mlp"]
+
+    # Rough parameter estimate
+    attn_params = n_layers * 4 * (d_model * d_model)  # Q, K, V, O
+    mlp_params = n_layers * 2 * (d_model * d_mlp)  # in, out
+    embed_params = d_model * 10000  # rough vocab estimate
+    total_params = (attn_params + mlp_params + embed_params) / 1e6
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Est. Parameters", f"{total_params:.1f}M")
+    with col2:
+        st.metric("Batch Size", batch_size)
+    with col3:
+        st.metric("Learning Rate", f"{lr:.5f}")
+    with col4:
+        st.metric("Epochs", epochs)
 
 
 st.title("🚂 Pre-Training")
@@ -367,76 +313,137 @@ st.title("🚂 Pre-Training")
 initialize_training_state()
 
 # File upload
-st.header("1. Upload Training Data")
-uploaded_file = st.file_uploader(
-    "Upload a text file for training",
-    type=["txt"],
-    help="Upload a text file to train the model on. If no file is uploaded, the default training.txt file will be used."
-)
+with st.container():
+    st.markdown("### 📁 1. Upload Training Data")
+    uploaded_file = st.file_uploader(
+        "Upload a text file for training",
+        type=["txt"],
+        help="Upload a text file to train the model on. If no file is uploaded, the default training.txt file will be used."
+    )
+    st.divider()
 
 # Model configuration UI
-st.header("2. Model Architecture")
-model_config = render_model_config_ui()
+with st.container():
+    st.markdown("### ⚙️ 2. Model Architecture")
+    model_config = render_model_config_ui()
+    st.divider()
 
 use_einops = st.checkbox("Use einops (recommended)", value=True)
 model_config["use_einops"] = use_einops  # Store in config for code snippets
 
 # Tokenizer selection
-st.header("3. Tokenizer")
-tokenizer_options = ["character", "bpe-simple",
-                     "bpe-tiktoken", "sentencepiece"]
-current_tokenizer = model_config.get("tokenizer_type", "bpe-tiktoken")
-tokenizer_index = tokenizer_options.index(
-    current_tokenizer) if current_tokenizer in tokenizer_options else 2
-tokenizer_type = st.selectbox(
-    "Tokenizer Type",
-    tokenizer_options,
-    index=tokenizer_index,
-    help="Character: simple but large vocab. BPE-simple: basic BPE implementation (educational). BPE-tiktoken: subword units using tiktoken (GPT-2 style). SentencePiece: multilingual support (LLaMA/OLMo style)."
-)
-model_config["tokenizer_type"] = tokenizer_type
+with st.container():
+    st.markdown("### 🔤 3. Tokenizer")
+    tokenizer_options = ["character", "bpe-simple",
+                         "bpe-tiktoken", "sentencepiece"]
+    current_tokenizer = model_config.get("tokenizer_type", "bpe-tiktoken")
+    tokenizer_index = tokenizer_options.index(
+        current_tokenizer) if current_tokenizer in tokenizer_options else 2
+    tokenizer_type = st.selectbox(
+        "Tokenizer Type",
+        tokenizer_options,
+        index=tokenizer_index,
+        help="Character: simple but large vocab. BPE-simple: basic BPE implementation (educational). BPE-tiktoken: subword units using tiktoken (GPT-2 style). SentencePiece: multilingual support (LLaMA/OLMo style)."
+    )
+    model_config["tokenizer_type"] = tokenizer_type
+    st.divider()
 
 # Hyperparameters
-st.header("4. Training Hyperparameters")
-with st.expander("Advanced Settings", expanded=False):
-    col1, col2 = st.columns(2)
-    with col1:
-        batch_size = st.number_input(
-            "Batch Size", min_value=1, max_value=128, value=32)
-        learning_rate = st.number_input(
-            "Learning Rate", min_value=1e-5, max_value=1e-1, value=1e-3, format="%.5f")
-        weight_decay = st.number_input(
-            "Weight Decay", min_value=0.0, max_value=1.0, value=1e-2, format="%.5f")
-    with col2:
-        epochs = st.number_input(
-            "Epochs", min_value=1, max_value=100, value=10)
-        max_steps_per_epoch = st.number_input(
-            "Max Steps per Epoch", min_value=100, max_value=10000, value=500)
-        eval_interval = st.number_input(
-            "Evaluation Interval", min_value=100, max_value=5000, value=500)
-        save_interval = st.number_input(
-            "Save Interval", min_value=100, max_value=5000, value=1000)
+with st.container():
+    st.markdown("### 🎛️ 4. Training Hyperparameters")
 
-st.header("5. Undestand Your Model")
+    tab1, tab2, tab3 = st.tabs(
+        ["📊 Core Settings", "🎯 Optimization", "💾 Checkpointing"])
 
-# Show architecture diagram
-render_model_architecture_diagram(model_config)
+    with tab1:
+        col1, col2 = st.columns(2)
+        with col1:
+            batch_size = st.number_input(
+                "Batch Size", min_value=1, max_value=128, value=32,
+                help="Number of samples per batch")
+        with col2:
+            epochs = st.number_input(
+                "Epochs", min_value=1, max_value=100, value=10,
+                help="Number of training epochs")
 
-# Show mathematical equations
-render_model_equations(model_config)
+    with tab2:
+        col1, col2 = st.columns(2)
+        with col1:
+            learning_rate = st.number_input(
+                "Learning Rate", min_value=1e-5, max_value=1e-1, value=1e-3, format="%.5f",
+                help="Initial learning rate")
+        with col2:
+            weight_decay = st.number_input(
+                "Weight Decay", min_value=0.0, max_value=1.0, value=1e-2, format="%.5f",
+                help="L2 regularization strength")
 
-# Show code implementation
-render_model_code_snippets(model_config)
+    with tab3:
+        col1, col2 = st.columns(2)
+        with col1:
+            eval_interval = st.number_input(
+                "Evaluation Interval", min_value=100, max_value=5000, value=500,
+                help="Evaluate every N iterations")
+        with col2:
+            save_interval = st.number_input(
+                "Save Interval", min_value=100, max_value=5000, value=1000,
+                help="Save checkpoint every N iterations")
+
+    max_steps_per_epoch = st.number_input(
+        "Max Steps per Epoch", min_value=100, max_value=10000, value=500,
+        help="Maximum number of training steps per epoch")
+
+    # Quick stats
+    _render_quick_stats(model_config, batch_size, learning_rate, epochs)
+    st.divider()
+
+# Understand Your Model
+with st.container():
+    st.markdown("### 📚 5. Understand Your Model")
+
+    # Show architecture diagram
+    render_model_architecture_diagram(model_config)
+
+    # Show mathematical equations
+    render_model_equations(model_config)
+
+    # Show code implementation
+    render_model_code_snippets(model_config)
+    st.divider()
 
 # Start training button
-st.header("6. Start Training")
-col1, col2, col3 = st.columns([1, 1, 2])
+with st.container():
+    st.markdown("### 🚀 6. Start Training")
 
-with col1:
-    start_training = st.button(
-        "🚀 Start Training", type="primary", width='stretch')
-with col2:
-    stop_training = st.button("⏹️ Stop Training", width='stretch')
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+
+    with col2:
+        start_training = st.button(
+            "🚀 Start Training", type="primary", use_container_width=True,
+            help="Begin training with current configuration")
+    with col3:
+        stop_training = st.button(
+            "⏹️ Stop Training", use_container_width=True,
+            help="Stop the current training run",
+            disabled=not st.session_state.training_active)
+
+    # Configuration summary before starting
+    if start_training:
+        with st.expander("📋 Configuration Summary", expanded=True):
+            st.json({
+                "Model": model_config,
+                "Hyperparameters": {
+                    "batch_size": batch_size,
+                    "learning_rate": learning_rate,
+                    "weight_decay": weight_decay,
+                    "epochs": epochs,
+                    "max_steps_per_epoch": max_steps_per_epoch,
+                    "eval_interval": eval_interval,
+                    "save_interval": save_interval
+                },
+                "Tokenizer": tokenizer_type,
+                "Use Einops": use_einops
+            })
+    st.divider()
 
 if stop_training and st.session_state.training_active:
     with st.session_state.training_lock:

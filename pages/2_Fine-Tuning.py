@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from pretraining.tokenization.tokenizer import (
@@ -22,7 +21,8 @@ from finetuning.training.sft_training_ui import train_sft_model_thread
 from pretraining.training.training_ui import initialize_training_state
 from ui_components import (
     render_checkpoint_selector, render_finetuning_equations, render_finetuning_code_snippets,
-    format_elapsed_time, get_elapsed_time, get_total_training_time
+    format_elapsed_time, get_total_training_time, render_training_metrics,
+    render_all_losses_graph, render_eval_losses_graph, render_completed_training_ui
 )
 from config import PositionalEncoding
 
@@ -323,65 +323,8 @@ def _start_finetuning_workflow(
     st.rerun()
 
 
-def _render_all_losses_graph(all_losses_data):
-    """Render all losses graph."""
-    st.subheader("📈 Training Loss")
-    df_all = pd.DataFrame({
-        "Iteration": all_losses_data["iterations"],
-        "Current Loss": all_losses_data["current_losses"],
-        "Running Avg Loss": all_losses_data["running_losses"]
-    })
-
-    fig_all = go.Figure()
-    fig_all.add_trace(go.Scatter(
-        x=df_all["Iteration"], y=df_all["Current Loss"],
-        mode="lines", name="Current Loss",
-        line={"color": "orange", "width": 1}, opacity=0.7
-    ))
-    fig_all.add_trace(go.Scatter(
-        x=df_all["Iteration"], y=df_all["Running Avg Loss"],
-        mode="lines", name="Running Avg Loss",
-        line={"color": "purple", "width": 2}
-    ))
-    fig_all.update_layout(
-        title="Fine-Tuning Losses (updated every 10 iterations)",
-        xaxis_title="Iteration", yaxis_title="Loss",
-        hovermode="x unified", height=400,
-        yaxis={"range": [0, None]}
-    )
-    st.plotly_chart(fig_all, width='stretch')
-
-
-def _render_eval_losses_graph(loss_data):
-    """Render evaluation losses graph."""
-    st.subheader("📊 Evaluation Losses (Train/Val)")
-    df = pd.DataFrame({
-        "Iteration": loss_data["iterations"],
-        "Train Loss": loss_data["train_losses"],
-        "Val Loss": loss_data["val_losses"]
-    })
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df["Iteration"], y=df["Train Loss"],
-        mode="lines+markers", name="Train Loss",
-        line={"color": "blue"}
-    ))
-    fig.add_trace(go.Scatter(
-        x=df["Iteration"], y=df["Val Loss"],
-        mode="lines+markers", name="Val Loss",
-        line={"color": "red"}
-    ))
-    fig.update_layout(
-        title="Training and Validation Loss (evaluated every 500 iterations)",
-        xaxis_title="Iteration", yaxis_title="Loss",
-        hovermode="x unified", height=400
-    )
-    st.plotly_chart(fig, width='stretch')
-
-
 def _render_active_training_ui():
-    """Render UI for active training."""
+    """Render UI for active training with enhanced visuals."""
     if "progress_data" in st.session_state:
         progress_data = st.session_state.progress_data
         with st.session_state.training_lock:
@@ -391,25 +334,32 @@ def _render_active_training_ui():
             val_loss = progress_data.get("val_loss")
             progress = progress_data.get("progress", 0.0)
 
-        st.header("📊 Fine-Tuning Progress")
+        # Enhanced header with status indicator
+        status_col1, status_col2 = st.columns([3, 1])
+        with status_col1:
+            st.header("📊 Fine-Tuning Progress")
+        with status_col2:
+            st.markdown("""
+            <div style='background-color: #28a745; color: white; padding: 8px 16px; 
+                        border-radius: 20px; text-align: center; font-weight: bold; margin-top: 20px;'>
+                🟢 Training...
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Progress bar with better styling
+        max_iters = st.session_state.trainer.max_iters if st.session_state.trainer else '?'
         st.progress(
-            progress, text=f"Iteration {current_iter} / {st.session_state.trainer.max_iters if st.session_state.trainer else '?'}")
+            progress, text=f"Iteration {current_iter:,} / {max_iters:,}")
 
-        # Calculate elapsed time
-        elapsed_time = get_elapsed_time()
-
-        metric_cols = st.columns(5)
-        with metric_cols[0]:
-            st.metric("Current Loss", f"{current_loss:.4f}")
-        with metric_cols[1]:
-            st.metric("Running Avg", f"{running_loss:.4f}")
-        with metric_cols[2]:
-            st.metric(
-                "Val Loss", f"{val_loss:.4f}" if val_loss is not None else "Pending...")
-        with metric_cols[3]:
-            st.metric("Progress", f"{progress*100:.1f}%")
-        with metric_cols[4]:
-            st.metric("Elapsed Time", format_elapsed_time(elapsed_time))
+        # Enhanced metrics - Timing first, then Performance below
+        render_training_metrics(
+            current_iter=current_iter,
+            current_loss=current_loss,
+            running_loss=running_loss,
+            val_loss=val_loss,
+            progress=progress,
+            max_iters=max_iters
+        )
 
     # Get loss data (thread-safe)
     with st.session_state.training_lock:
@@ -434,10 +384,10 @@ def _render_active_training_ui():
 
     # Render graphs
     if all_losses_data and len(all_losses_data["iterations"]) > 0:
-        _render_all_losses_graph(all_losses_data)
+        render_all_losses_graph(all_losses_data, training_type="Fine-Tuning")
 
     if loss_data["iterations"]:
-        _render_eval_losses_graph(loss_data)
+        render_eval_losses_graph(loss_data)
         st.caption("💡 Page auto-refreshes every 2 seconds while fine-tuning.")
         if st.session_state.training_active:
             time.sleep(2)
@@ -466,66 +416,36 @@ def _render_active_training_ui():
                 "⚠️ **Error detected in logs above. Please scroll up to see the full error message and traceback.**")
 
 
-def _render_completed_training_ui():
-    """Render UI for completed training."""
-    if st.session_state.loss_data["iterations"]:
-        # Calculate total elapsed time
-        total_time = get_total_training_time()
-
-        st.header("📊 Final Fine-Tuning Results")
-        if total_time > 0:
-            st.info(f"⏱️ Total fine-tuning time: **{format_elapsed_time(total_time)}**")
-        df = pd.DataFrame({
-            "Iteration": st.session_state.loss_data["iterations"],
-            "Train Loss": st.session_state.loss_data["train_losses"],
-            "Val Loss": st.session_state.loss_data["val_losses"]
-        })
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df["Iteration"], y=df["Train Loss"],
-            mode="lines+markers", name="Train Loss",
-            line={"color": "blue"}
-        ))
-        fig.add_trace(go.Scatter(
-            x=df["Iteration"], y=df["Val Loss"],
-            mode="lines+markers", name="Val Loss",
-            line={"color": "red"}
-        ))
-        fig.update_layout(
-            title="Training and Validation Loss",
-            xaxis_title="Iteration", yaxis_title="Loss",
-            hovermode="x unified"
-        )
-        st.plotly_chart(fig, width='stretch')
-
-
 def _handle_training_completion(training_flag_active: bool):
     """Handle training completion logic."""
     # Record end time
     if "training_start_time" in st.session_state and "training_end_time" not in st.session_state:
         st.session_state.training_end_time = time.time()
-    
+
     total_time = get_total_training_time()
-    
+
     if st.session_state.shared_training_logs:
         last_logs = list(st.session_state.shared_training_logs)[-3:]
         last_logs_str = " ".join(last_logs)
         if "Fine-tuning complete!" in last_logs_str or "Completed all" in last_logs_str:
             st.session_state.training_active = False
-            st.success(f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
+            st.success(
+                f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
         elif "Error during fine-tuning" in last_logs_str:
             st.session_state.training_active = False
             st.error("❌ Fine-tuning error occurred. Check logs for details.")
         elif "Fine-tuning stopped by user" in last_logs_str:
             st.session_state.training_active = False
-            st.info(f"⏹️ Fine-tuning stopped by user. Elapsed time: {format_elapsed_time(total_time)}")
+            st.info(
+                f"⏹️ Fine-tuning stopped by user. Elapsed time: {format_elapsed_time(total_time)}")
         elif not training_flag_active:
             st.session_state.training_active = False
-            st.success(f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
+            st.success(
+                f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
     elif not training_flag_active:
         st.session_state.training_active = False
-        st.success(f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
+        st.success(
+            f"✅ Fine-tuning completed! Total time: {format_elapsed_time(total_time)}")
 
 
 def _display_training_status():
@@ -544,7 +464,24 @@ def _display_training_status():
     if st.session_state.training_active:
         _render_active_training_ui()
     else:
-        _render_completed_training_ui()
+        render_completed_training_ui(training_type="Fine-Tuning")
+
+
+def _render_quick_stats(batch_size, lr, epochs, max_length, use_lora, lora_rank=None):
+    """Render quick statistics about the fine-tuning configuration."""
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Batch Size", batch_size)
+    with col2:
+        st.metric("Learning Rate", f"{lr:.6f}")
+    with col3:
+        st.metric("Epochs", epochs)
+    with col4:
+        st.metric("Max Length", max_length)
+
+    if use_lora and lora_rank:
+        st.info(
+            f"💡 Using LoRA with rank {lora_rank} (parameter-efficient fine-tuning)")
 
 
 st.title("🎯 Fine-Tuning (SFT)")
@@ -553,20 +490,24 @@ st.title("🎯 Fine-Tuning (SFT)")
 initialize_training_state()
 
 # Checkpoint selection
-selected_checkpoint = render_checkpoint_selector(
-    header="1. Select Pre-Trained Checkpoint",
-    filter_finetuned=True,
-    help_text="Select a pre-trained model to fine-tune",
-    no_checkpoints_message="No pre-trained checkpoints found. Please pre-train a model first."
-)
+with st.container():
+    selected_checkpoint = render_checkpoint_selector(
+        header="1. Select Pre-Trained Checkpoint",
+        filter_finetuned=True,
+        help_text="Select a pre-trained model to fine-tune",
+        no_checkpoints_message="No pre-trained checkpoints found. Please pre-train a model first."
+    )
+    st.divider()
 
 # Fine-tuning method selection
-st.header("2. Fine-Tuning Method")
-fine_tuning_method = st.radio(
-    "Select fine-tuning method",
-    ["Full Parameter Fine-Tuning", "LoRA (Parameter-Efficient)"],
-    help="Full Parameter: Updates all model weights. LoRA: Only trains small adapter matrices (faster, less memory)."
-)
+with st.container():
+    st.markdown("### 🔧 2. Fine-Tuning Method")
+    fine_tuning_method = st.radio(
+        "Select fine-tuning method",
+        ["Full Parameter Fine-Tuning", "LoRA (Parameter-Efficient)"],
+        help="Full Parameter: Updates all model weights. LoRA: Only trains small adapter matrices (faster, less memory)."
+    )
+    st.divider()
 
 # LoRA options (only show if LoRA selected)
 use_lora = fine_tuning_method == "LoRA (Parameter-Efficient)"
@@ -615,80 +556,140 @@ if use_lora:
         )
 
 # CSV upload
-st.header("3. Upload Training Data")
-uploaded_csv = st.file_uploader(
-    "Upload CSV file",
-    type=["csv"],
-    help="CSV should have two columns: 'prompt'/'response' or 'instruction'/'output'. Each row is a training example. You can format your data however you like (including with instruction templates already applied). If no file is uploaded, the default finetuning.csv will be used."
-)
+with st.container():
+    st.markdown("### 📁 3. Upload Training Data")
+    uploaded_csv = st.file_uploader(
+        "Upload CSV file",
+        type=["csv"],
+        help="CSV should have two columns: 'prompt'/'response' or 'instruction'/'output'. Each row is a training example. You can format your data however you like (including with instruction templates already applied). If no file is uploaded, the default finetuning.csv will be used."
+    )
 
-# Use default file if no upload
-if uploaded_csv is None:
-    if os.path.exists("finetuning.csv"):
-        st.info(
-            "📄 Using default finetuning.csv file. Upload a different file to override.")
-        # Preview default CSV
-        df = pd.read_csv("finetuning.csv")
-        st.dataframe(df.head(), width='stretch')
-        st.caption(f"Total rows: {len(df)}")
+    # Use default file if no upload
+    if uploaded_csv is None:
+        if os.path.exists("finetuning.csv"):
+            st.info(
+                "📄 Using default finetuning.csv file. Upload a different file to override.")
+            # Preview default CSV
+            df = pd.read_csv("finetuning.csv")
+            st.dataframe(df.head(), use_container_width=True)
+            st.caption(f"Total rows: {len(df)}")
+        else:
+            st.warning(
+                "No CSV file uploaded and finetuning.csv not found. Please upload a CSV file.")
     else:
-        st.warning(
-            "No CSV file uploaded and finetuning.csv not found. Please upload a CSV file.")
-else:
-    # Preview uploaded CSV
-    df = pd.read_csv(uploaded_csv)
-    st.dataframe(df.head(), use_container_width=True)
-    st.caption(f"Total rows: {len(df)}")
+        # Preview uploaded CSV
+        df = pd.read_csv(uploaded_csv)
+        st.dataframe(df.head(), use_container_width=True)
+        st.caption(f"Total rows: {len(df)}")
+    st.divider()
 
 # Hyperparameters
-st.header("4. Fine-Tuning Hyperparameters")
-col1, col2 = st.columns(2)
-with col1:
-    batch_size = st.number_input(
-        "Batch Size", min_value=1, max_value=32, value=4)
-    learning_rate = st.number_input(
-        "Learning Rate", min_value=1e-6, max_value=1e-3, value=1e-5, format="%.6f"
-    )
-    weight_decay = st.number_input(
-        "Weight Decay", min_value=0.0, max_value=1.0, value=0.01, format="%.5f"
-    )
-with col2:
-    epochs = st.number_input("Epochs", min_value=1, max_value=10, value=3)
+with st.container():
+    st.markdown("### 🎛️ 4. Fine-Tuning Hyperparameters")
+
+    tab1, tab2, tab3 = st.tabs(
+        ["📊 Core Settings", "🎯 Optimization", "💾 Checkpointing"])
+
+    with tab1:
+        col1, col2 = st.columns(2)
+        with col1:
+            batch_size = st.number_input(
+                "Batch Size", min_value=1, max_value=32, value=4,
+                help="Number of samples per batch")
+        with col2:
+            epochs = st.number_input("Epochs", min_value=1, max_value=10, value=3,
+                                     help="Number of training epochs")
+
+    with tab2:
+        col1, col2 = st.columns(2)
+        with col1:
+            learning_rate = st.number_input(
+                "Learning Rate", min_value=1e-6, max_value=1e-3, value=1e-5, format="%.6f",
+                help="Initial learning rate (typically 10-100x lower than pre-training)")
+        with col2:
+            weight_decay = st.number_input(
+                "Weight Decay", min_value=0.0, max_value=1.0, value=0.01, format="%.5f",
+                help="L2 regularization strength")
+
+    with tab3:
+        col1, col2 = st.columns(2)
+        with col1:
+            eval_interval = st.number_input(
+                "Evaluation Interval", min_value=100, max_value=2000, value=500,
+                help="Evaluate every N iterations")
+        with col2:
+            save_interval = st.number_input(
+                "Save Interval", min_value=100, max_value=2000, value=500,
+                help="Save checkpoint every N iterations")
+
     max_steps_per_epoch = st.number_input(
-        "Max Steps per Epoch", min_value=100, max_value=5000, value=1000
+        "Max Steps per Epoch", min_value=100, max_value=5000, value=1000,
+        help="Maximum number of training steps per epoch")
+
+    max_length = st.number_input(
+        "Max Sequence Length", min_value=128, max_value=2048, value=512,
+        help="Maximum length for prompt+response sequences")
+
+    # Quick stats
+    _render_quick_stats(batch_size, learning_rate, epochs,
+                        max_length, use_lora, lora_rank if use_lora else None)
+    st.divider()
+
+# Understand Your Model
+with st.container():
+    st.markdown("### 📚 5. Understand Your Model")
+
+    # Show equations (after LoRA config so values are available)
+    render_finetuning_equations(
+        use_lora=use_lora,
+        lora_rank=lora_rank,
+        lora_alpha=lora_alpha,
     )
-    eval_interval = st.number_input(
-        "Evaluation Interval", min_value=100, max_value=2000, value=500
-    )
-    save_interval = st.number_input(
-        "Save Interval", min_value=100, max_value=2000, value=500
-    )
 
-max_length = st.number_input(
-    "Max Sequence Length", min_value=128, max_value=2048, value=512,
-    help="Maximum length for prompt+response sequences"
-)
-
-st.header("5. Undestand Your Model")
-
-# Show equations (after LoRA config so values are available)
-render_finetuning_equations(
-    use_lora=use_lora,
-    lora_rank=lora_rank,
-    lora_alpha=lora_alpha,
-)
-
-# Show code implementation
-render_finetuning_code_snippets(use_lora=use_lora)
+    # Show code implementation
+    render_finetuning_code_snippets(use_lora=use_lora)
+    st.divider()
 
 # Start fine-tuning button
-st.header("6. Start Fine-Tuning")
-col1, col2, col3 = st.columns([1, 1, 2])
+with st.container():
+    st.markdown("### 🚀 6. Start Fine-Tuning")
 
-with col1:
-    start_finetuning = st.button("🚀 Start Fine-Tuning", type="primary")
-with col2:
-    stop_training = st.button("⏹️ Stop Fine-Tuning")
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+
+    with col2:
+        start_finetuning = st.button("🚀 Start Fine-Tuning", type="primary", use_container_width=True,
+                                     help="Begin fine-tuning with current configuration")
+    with col3:
+        stop_training = st.button("⏹️ Stop Fine-Tuning", use_container_width=True,
+                                  help="Stop the current fine-tuning run",
+                                  disabled=not st.session_state.training_active)
+
+    # Configuration summary before starting
+    if start_finetuning:
+        with st.expander("📋 Configuration Summary", expanded=True):
+            config_summary = {
+                "Checkpoint": selected_checkpoint["path"] if selected_checkpoint else "None",
+                "Method": "LoRA" if use_lora else "Full Parameter",
+                "Hyperparameters": {
+                    "batch_size": batch_size,
+                    "learning_rate": learning_rate,
+                    "weight_decay": weight_decay,
+                    "epochs": epochs,
+                    "max_steps_per_epoch": max_steps_per_epoch,
+                    "max_length": max_length,
+                    "eval_interval": eval_interval,
+                    "save_interval": save_interval
+                }
+            }
+            if use_lora:
+                config_summary["LoRA"] = {
+                    "rank": lora_rank,
+                    "alpha": lora_alpha,
+                    "dropout": lora_dropout,
+                    "target_modules": lora_target_modules
+                }
+            st.json(config_summary)
+    st.divider()
 
 if stop_training and st.session_state.training_active:
     with st.session_state.training_lock:
