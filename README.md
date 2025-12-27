@@ -1167,21 +1167,22 @@ def forward(self, tokens):
 
 ## Resources
 
+- [ARENA's Transformers from Scratch](https://arena-chapter1-transformer-interp.streamlit.app/%5B1.1%5D_Transformer_from_Scratch)
+- [Neel Nanda on building an LLM from scratch](https://www.youtube.com/watch?v=bOYE6E8JrtU&list=PL7m7hLIqA0hoIUPhC26ASCVs_VrqcDpAz)
+- [Andrej Karpathy on building an LLM from scratch](https://www.youtube.com/watch?v=l8pRSuU81PU)
+- [Sebastian Raschka's Build an LLM from Scratch](https://sebastianraschka.com/llms-from-scratch/)
+- [3Blue1Brown on LLMs](https://www.youtube.com/watch?v=LPZh9BOjkQs&list=PLZHQObOWTQDNU6R1_67000Dx_ZCJB-3pi&index=6)
+- [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
+- [John Hewitt at Stanford on pre-training](https://www.youtube.com/watch?v=DGfCRXuNA2w&list=PLoROMvodv4rOaMFbaqxPDoLWjDaRAdP9D&index=11)
+- (Tom Yeh's AI By Hand](https://www.byhand.ai/)
+- [Sebastian Raschka's Big LLM Architecture Comparison](https://magazine.sebastianraschka.com/p/the-big-llm-architecture-comparison)
+
 ### Papers
 
 - [Attention Is All You Need](https://arxiv.org/pdf/1706.03762) - Original transformer paper
 - [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) - GPT-2 paper
 - [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/pdf/2302.13971) - LLaMA paper
 - [OLMo: Accelerating the Science of Language Models](https://arxiv.org/pdf/2402.00838) - OLMo paper
-
-### Transformers
-
-- [ARENA's Transformers from Scratch](https://arena-chapter1-transformer-interp.streamlit.app/%5B1.1%5D_Transformer_from_Scratch)
-- [Neel Nanda on building an LLM from scratch](https://www.youtube.com/watch?v=bOYE6E8JrtU&list=PL7m7hLIqA0hoIUPhC26ASCVs_VrqcDpAz)
-- [Andrej Karpathy on building an LLM from scratch](https://www.youtube.com/watch?v=l8pRSuU81PU)
-- [3Blue1Brown on LLMs](https://www.youtube.com/watch?v=LPZh9BOjkQs&list=PLZHQObOWTQDNU6R1_67000Dx_ZCJB-3pi&index=6)
-- [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
-- [John Hewitt at Stanford on pre-training](https://www.youtube.com/watch?v=DGfCRXuNA2w&list=PLoROMvodv4rOaMFbaqxPDoLWjDaRAdP9D&index=11)
 
 ### Einops
 - [Einops Documentation](https://einops.rocks/) - Learn more about einops
