@@ -10,7 +10,6 @@ from utils import get_device
 from pretraining.model.model_loader import load_model_from_checkpoint
 
 
-# Page configuration
 st.set_page_config(
     page_title="Transformer Training & Inference",
     page_icon="🤖",
@@ -108,9 +107,3 @@ if "scan_checkpoints" not in st.session_state:
     st.session_state.scan_checkpoints = scan_checkpoints
 if "load_model_from_checkpoint" not in st.session_state:
     st.session_state.load_model_from_checkpoint = load_model_from_checkpoint
-
-# Note: Training and Inference pages are in the pages/ directory
-# Streamlit automatically creates navigation for files in pages/
-# - pages/1_Pre-Training.py: Pre-training page
-# - pages/2_Fine-Tuning.py: Fine-tuning (SFT) page
-# - pages/3_Inference.py: Inference page
