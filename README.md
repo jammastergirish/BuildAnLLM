@@ -4,15 +4,14 @@
 
 This repository contains a complete, educational implementation of a transformer-based autoregressive, decoder-only language model. It is optimized not for speed or cost, but rather for learning.
 
-It offers three learning objectives:
+Users can:
 
-- **Pre-train an LLM from scratch** using a simple, intuitive interface.
-- **Fine-tune a pre-trained model** on prompt/response pairs using supervised fine-tuning (SFT), with support for both full-parameter fine-tuning and parameter-efficient fine-tuning via LoRA.
-- **Explore the codebase** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. 
+- **Pre-train an LLM from scratch** using a simple, intuitive interface, with a diagram that visualizes your specific configuration.
+- **Fine-tune a pre-trained model** on prompt/response pairs using supervised fine-tuning (SFT), with support for both full-parameter and parameter-efficient fine-tuning via LoRA.
+- **Explore the codebase** to understand the modularized building blocks of transformer models, with multiple implementation variants for each component. The code shown dynamically adapts to your configuration choices.
+- **Work through the equations** to understand the math behind the code, with equations dynamically displayed based on your configuration.
 
-Throughout the interface, users can view the actual code being executed (with direct GitHub links) and the underlying equations, all dynamically tailored to their model configuration. During pre-training, an interactive architecture diagram is also displayed.
-
-I built this as I wanted to properly understand LLMs. A great way to learn is to write code yourself; an even better way to learn is to write the code in a general, modular manner that's clean enough for others to read.
+I built this as I wanted to properly understand LLMs. A great way to learn is to write code yourself; an even better way to learn is to write code in a general, modular manner that's clean enough for others to read.
 
 I'm incredibly grateful to all those from whom I learned and borrowed ideas (see [Resources](#resources)). I hope others find this repository helpful too!
 
