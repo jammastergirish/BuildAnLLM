@@ -16,5 +16,6 @@ dependencies = [
     "plotly>=5.17.0",
     "pandas>=2.0.0",
     "graphviz>=0.21",
+    "psutil>=7.2.0",
 ]
 
