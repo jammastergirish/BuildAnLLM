@@ -1174,7 +1174,7 @@ def forward(self, tokens):
 - [3Blue1Brown on LLMs](https://www.youtube.com/watch?v=LPZh9BOjkQs&list=PLZHQObOWTQDNU6R1_67000Dx_ZCJB-3pi&index=6)
 - [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
 - [John Hewitt at Stanford on pre-training](https://www.youtube.com/watch?v=DGfCRXuNA2w&list=PLoROMvodv4rOaMFbaqxPDoLWjDaRAdP9D&index=11)
-- (Tom Yeh's AI By Hand](https://www.byhand.ai/)
+- [Tom Yeh's AI By Hand](https://www.byhand.ai/)
 - [Sebastian Raschka's Big LLM Architecture Comparison](https://magazine.sebastianraschka.com/p/the-big-llm-architecture-comparison)
 
 ### Papers
