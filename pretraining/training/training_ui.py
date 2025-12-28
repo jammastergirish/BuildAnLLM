@@ -6,7 +6,11 @@ import threading
 from typing import Dict, Any, List
 from collections import deque
 
-from pretraining.training.trainer import TransformerTrainer
+from pretraining.training.trainer import (
+    TransformerTrainer,
+    _extract_model_output_and_aux_loss,
+    _add_aux_loss_to_main_loss
+)
 
 
 def initialize_training_state():
@@ -136,10 +140,17 @@ def _training_step(trainer, iter_num, first_loss_set):
     x_batch = trainer.X_train[idx].to(trainer.device)
     y_batch = trainer.Y_train[idx].to(trainer.device)
 
-    logits = trainer.model(x_batch)
+    # Forward pass - may return (logits, aux_loss) if MoE is enabled
+    model_output = trainer.model(x_batch)
+    logits, aux_loss = _extract_model_output_and_aux_loss(model_output)
+
+    # Compute main loss
     loss = torch.nn.functional.cross_entropy(
         logits.view(-1, logits.size(-1)), y_batch.view(-1)
     )
+
+    # Add auxiliary loss if MoE is enabled
+    loss = _add_aux_loss_to_main_loss(loss, aux_loss, trainer.model)
 
     trainer.optimizer.zero_grad()
     loss.backward()
