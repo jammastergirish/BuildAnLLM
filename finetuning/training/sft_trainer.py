@@ -37,7 +37,7 @@ class SFTTrainer:
     **Note**: This trainer reuses the same transformer architecture from pre-training.
     The model itself may use einops or not (determined by the pre-trained checkpoint).
     """
-    
+
     def __init__(
         self,
         model: nn.Module,
@@ -66,7 +66,7 @@ class SFTTrainer:
         self.eval_iters = args.eval_iters
         self.print_interval = print_interval
         self.tokenizer_type = tokenizer_type
-        
+
         # Setup optimizer (lower learning rate than pre-training)
         # If using LoRA, only optimize LoRA parameters
         if hasattr(args, 'use_lora') and args.use_lora:
@@ -79,93 +79,160 @@ class SFTTrainer:
                 )
             print(f"Optimizing {len(trainable_params)} LoRA parameter groups")
         else:
-            trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+            trainable_params = [
+                p for p in self.model.parameters() if p.requires_grad]
             if len(trainable_params) == 0:
                 raise ValueError(
                     "No trainable parameters found! All model parameters are frozen. "
                     "This might happen if LoRA was applied but use_lora=False, or if all parameters were manually frozen."
                 )
-        
+
         self.optimizer = torch.optim.AdamW(
             trainable_params, lr=args.lr, weight_decay=args.weight_decay
         )
-        
+
         # Calculate max_iters
         self.max_iters = args.epochs * args.max_steps_per_epoch
-        
+
         # Track running average of loss
         self.running_loss = 0.0
         self.loss_alpha = 0.99
-        
+
         # Track losses for plotting
         self.train_losses = []
         self.val_losses = []
         self.iterations = []
-        
+
         # Create save directory if it doesn't exist
         if args.save_dir:
             os.makedirs(args.save_dir, exist_ok=True)
-    
+
+    def _compute_masked_loss(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        masks: torch.Tensor
+    ) -> torch.Tensor:
+        """Compute masked cross-entropy loss.
+
+        Only computes loss on response tokens (where mask == 1), ignoring prompt tokens.
+        This is the key difference from pre-training: we teach the model to generate
+        responses, not repeat prompts.
+
+        Formula:
+            loss = sum(loss_per_token * mask) / sum(mask)
+
+        Args:
+            logits: Model predictions [batch_size, seq_len, vocab_size]
+            targets: Target token IDs [batch_size, seq_len]
+            masks: Loss masks [batch_size, seq_len] (1 for response, 0 for prompt)
+
+        Returns:
+            Scalar masked loss (average over response tokens only)
+        """
+        # Reshape for cross_entropy
+        # [batch_size * seq_len, vocab_size]
+        logits_flat = logits.view(-1, logits.size(-1))
+        targets_flat = targets.view(-1)  # [batch_size * seq_len]
+        masks_flat = masks.view(-1)  # [batch_size * seq_len]
+
+        # Cross-entropy loss per token (before masking)
+        loss_unmasked = F.cross_entropy(
+            logits_flat, targets_flat, reduction='none')
+
+        # Apply mask: multiply by mask (0 for prompt, 1 for response), then average
+        # Only response tokens contribute to loss
+        loss = (loss_unmasked * masks_flat).sum() / \
+            masks_flat.sum().clamp(min=1)
+
+        return loss
+
+    def _evaluate_batch(
+        self,
+        x_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        masks_batch: torch.Tensor
+    ) -> float:
+        """Compute masked loss for a single batch.
+
+        Args:
+            x_batch: Input tokens [batch_size, seq_len]
+            y_batch: Target tokens [batch_size, seq_len]
+            masks_batch: Loss masks [batch_size, seq_len] (1 for response, 0 for prompt)
+
+        Returns:
+            Loss value (scalar float)
+        """
+        logits = self.model(x_batch)
+        loss = self._compute_masked_loss(logits, y_batch, masks_batch)
+        return loss.item()
+
+    def _evaluate_split(
+        self,
+        split_name: str,
+        split_X: torch.Tensor,
+        split_Y: torch.Tensor,
+        split_masks: torch.Tensor
+    ) -> float:
+        """Evaluate one split (train or val) with masked loss.
+
+        Computes average masked loss over multiple random batches from the split.
+        Only computes loss on response tokens (where mask == 1).
+
+        Args:
+            split_name: Name of split ("train" or "val")
+            split_X: Input tokens for split
+            split_Y: Target tokens for split
+            split_masks: Loss masks for split
+
+        Returns:
+            Average masked loss over evaluation iterations
+        """
+        losses = torch.zeros(self.eval_iters)
+        for k in tqdm(
+            range(self.eval_iters),
+            desc=f"Evaluating {split_name}",
+            leave=False,
+        ):
+            # Random batch
+            idx = torch.randint(0, len(split_X), (self.args.batch_size,))
+            x_batch = split_X[idx].to(self.device)
+            y_batch = split_Y[idx].to(self.device)
+            masks_batch = split_masks[idx].to(self.device)
+
+            losses[k] = self._evaluate_batch(x_batch, y_batch, masks_batch)
+
+        return losses.mean().item()
+
     @torch.no_grad()
     def estimate_loss(self):
         """Estimate loss on train and val sets."""
         out = {}
         self.model.eval()
-        for split_name, split_X, split_Y, split_masks in [
-            ("train", self.X_train, self.Y_train, self.masks_train),
-            ("val", self.X_val, self.Y_val, self.masks_val),
-        ]:
-            losses = torch.zeros(self.eval_iters)
-            for k in tqdm(
-                range(self.eval_iters),
-                desc=f"Evaluating {split_name}",
-                leave=False,
-            ):
-                # Random batch
-                # idx: [batch_size] - random indices
-                idx = torch.randint(0, len(split_X), (self.args.batch_size,))
-                # x_batch: [batch_size, seq_len] - input sequences
-                # y_batch: [batch_size, seq_len] - target sequences
-                # masks_batch: [batch_size, seq_len] - loss masks (1 for response, 0 for prompt)
-                x_batch = split_X[idx].to(self.device)
-                y_batch = split_Y[idx].to(self.device)
-                masks_batch = split_masks[idx].to(self.device)
 
-                # Forward pass
-                # logits: [batch_size, seq_len, vocab_size] - model predictions
-                logits = self.model(x_batch)
+        # Evaluate train split
+        out["train"] = self._evaluate_split(
+            "train", self.X_train, self.Y_train, self.masks_train
+        )
 
-                # Compute loss only on response tokens (where mask == 1)
-                # This is the key difference from pre-training: we ignore loss on prompt tokens
-                # Reshape for cross_entropy
-                # logits_flat: [batch_size * seq_len, vocab_size]
-                # targets_flat: [batch_size * seq_len]
-                # masks_flat: [batch_size * seq_len] - 1 for response, 0 for prompt
-                logits_flat = logits.view(-1, logits.size(-1))
-                targets_flat = y_batch.view(-1)
-                masks_flat = masks_batch.view(-1)
+        # Evaluate val split
+        out["val"] = self._evaluate_split(
+            "val", self.X_val, self.Y_val, self.masks_val
+        )
 
-                # Cross-entropy loss (per token, before masking)
-                # loss_unmasked: [batch_size * seq_len] - loss for each position
-                loss_unmasked = F.cross_entropy(
-                    logits_flat, targets_flat, reduction='none'
-                )
-                # Apply mask: only compute loss on response tokens
-                # loss_masked: scalar - average loss over response tokens only
-                loss_masked = (loss_unmasked * masks_flat).sum() / masks_flat.sum().clamp(min=1)
-                losses[k] = loss_masked.item()
-            out[split_name] = losses.mean().item()
         self.model.train()
         return out
-    
+
     def train(self):
         """Main training loop."""
         print("\nStarting fine-tuning...")
-        print(f"Training for {self.args.epochs} epochs, {self.max_iters} total iterations")
-        print(f"Batch size: {self.args.batch_size}, Learning rate: {self.args.lr}")
+        print(
+            f"Training for {self.args.epochs} epochs, {self.max_iters} total iterations")
+        print(
+            f"Batch size: {self.args.batch_size}, Learning rate: {self.args.lr}")
         print(f"Weight decay: {self.args.weight_decay}")
         print(f"Evaluating every {self.eval_interval} iterations\n")
-        
+
         pbar = tqdm(range(self.max_iters), desc="Fine-tuning")
         for iter_num in pbar:
             # Get random batch
@@ -185,47 +252,32 @@ class SFTTrainer:
             # Compute masked loss (only on response tokens)
             # Key difference from pre-training: we ignore loss on prompt tokens
             # This teaches the model to generate responses, not repeat prompts
-            # Reshape for cross_entropy
-            # logits_flat: [batch_size * seq_len, vocab_size]
-            # targets_flat: [batch_size * seq_len]
-            # masks_flat: [batch_size * seq_len] - 1 for response, 0 for prompt
-            logits_flat = logits.view(-1, logits.size(-1))
-            targets_flat = y_batch.view(-1)
-            masks_flat = masks_batch.view(-1)
+            loss = self._compute_masked_loss(logits, y_batch, masks_batch)
 
-            # Cross-entropy loss per token (before masking)
-            # loss_unmasked: [batch_size * seq_len] - loss for each position
-            loss_unmasked = F.cross_entropy(
-                logits_flat, targets_flat, reduction='none'
-            )
-            # Apply mask: multiply by mask (0 for prompt, 1 for response), then average
-            # loss: scalar - average loss over response tokens only
-            loss = (loss_unmasked * masks_flat).sum() / masks_flat.sum().clamp(min=1)
-            
             # Backward pass
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            
+
             # Update running loss
             self.running_loss = (
                 self.loss_alpha * self.running_loss
                 + (1 - self.loss_alpha) * loss.item()
             )
-            
+
             # Update progress bar
             pbar.set_postfix({
                 "loss": f"{loss.item():.4f}",
                 "avg_loss": f"{self.running_loss:.4f}",
             })
-            
+
             # Print detailed loss periodically
             if iter_num % self.print_interval == 0 and iter_num > 0:
                 print(
                     f"\n[Iter {iter_num}] Current loss: {loss.item():.4f}, "
                     f"Running avg: {self.running_loss:.4f}"
                 )
-            
+
             # Evaluate at intervals
             should_eval = (
                 (iter_num > 0 and iter_num % self.eval_interval == 0)
@@ -245,7 +297,7 @@ class SFTTrainer:
                     "avg_loss": f"{self.running_loss:.4f}",
                     "val_loss": f"{losses['val']:.4f}",
                 })
-            
+
             # Save checkpoint
             if (
                 hasattr(self.args, "save_interval")
@@ -253,37 +305,37 @@ class SFTTrainer:
                 and iter_num > 0
             ):
                 self.save_checkpoint(iter_num)
-        
+
         pbar.close()
         print("\nFine-tuning complete!")
         print(f"Final running average loss: {self.running_loss:.4f}")
-        
+
         # Save final checkpoint
         if self.args.save_dir:
             self.save_checkpoint(self.max_iters, is_final=True)
-    
+
     def save_checkpoint(self, iter_num: int, is_final: bool = False):
         """Save model checkpoint."""
         if not self.args.save_dir:
             return
-        
+
         if is_final:
             filepath = os.path.join(self.args.save_dir, "final_model.pt")
         else:
             filepath = os.path.join(
                 self.args.save_dir, f"checkpoint_{iter_num}.pt"
             )
-        
+
         # Save model config
         cfg = self.model.cfg if hasattr(self.model, "cfg") else None
         cfg_dict = cfg.to_dict() if cfg is not None else None
-        
+
         # Determine model type
         model_type = "with_einops" if "WithEinops" in self.model.__class__.__name__ else "without_einops"
-        
+
         # Get state dict
         model_state_dict = self.model.state_dict()
-        
+
         # If using LoRA, also save LoRA-specific info
         lora_info = None
         if hasattr(self.args, 'use_lora') and self.args.use_lora:
@@ -296,7 +348,7 @@ class SFTTrainer:
                 "lora_target_modules": self.args.lora_target_modules,
                 "lora_param_count": param_counts['lora'],
             }
-        
+
         checkpoint_data = {
             "model_state_dict": model_state_dict,
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -308,13 +360,12 @@ class SFTTrainer:
             "tokenizer_type": self.tokenizer_type,
             "is_finetuned": True,  # Mark as fine-tuned
         }
-        
+
         # Add LoRA info if present
         if lora_info:
             checkpoint_data["lora_info"] = lora_info
             checkpoint_data["use_lora"] = True
-        
+
         torch.save(checkpoint_data, filepath)
         if not is_final:
             print(f"Checkpoint saved: {filepath}")
-

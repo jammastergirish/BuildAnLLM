@@ -560,9 +560,11 @@ for _ in range(max_new_tokens):
 
 **Purpose**: Normalize activations across the feature dimension to stabilize training.
 
-**Three Implementations:**
+**Unified Implementation:**
 
-#### `LayerNormWithEinops`
+The `LayerNorm` class supports both einops and PyTorch implementations via the `use_einops` flag:
+
+#### With Einops (`use_einops=True`)
 Uses `einops.reduce` for mean and variance computation:
 ```python
 # Compute mean: [batch, posn, d_model] -> [batch, posn, 1]
@@ -573,7 +575,7 @@ residual_mean = einops.reduce(
 
 **Why this works**: Einops makes it explicit that we're reducing over `d_model` while keeping `batch` and `posn`.
 
-#### `LayerNormWithoutEinops`
+#### Without Einops (`use_einops=False`)
 Uses PyTorch's built-in operations:
 ```python
 # Compute mean: [batch, posn, d_model] -> [batch, posn, 1]
@@ -582,7 +584,7 @@ residual_mean = residual.mean(dim=-1, keepdim=True)
 
 **Why this works**: `dim=-1` means "last dimension" (d_model), `keepdim=True` preserves the dimension.
 
-#### `LayerNormWithTorch`
+#### PyTorch Built-in (`LayerNormWithTorch`)
 Uses PyTorch's `nn.LayerNorm`:
 ```python
 self.ln = nn.LayerNorm(cfg.d_model, eps=cfg.layer_norm_eps)
@@ -694,7 +696,9 @@ Output: [batch, position, d_model]  # e.g., [[emb[5], emb[10], emb[3]]]
 
 **Purpose**: Add information about token positions in the sequence.
 
-#### `PosEmbedWithEinops`
+The `PosEmbed` class supports both einops and PyTorch implementations via the `use_einops` flag:
+
+#### With Einops (`use_einops=True`)
 ```python
 # W_pos: [n_ctx, d_model] - one embedding per position
 # Get embeddings for current sequence length
@@ -712,7 +716,7 @@ einops.repeat(
 - `W_pos[i]` is the embedding for position `i`
 - `einops.repeat` broadcasts `[seq_len, d_model]` to `[batch, seq_len, d_model]`
 
-#### `PosEmbedWithoutEinops`
+#### Without Einops (`use_einops=False`)
 ```python
 # Manual broadcasting
 position_embeddings_we_need = self.W_pos[:sequence_length]  # [seq_len, d_model]
@@ -888,7 +892,11 @@ The codebase supports three attention variants:
 4. Attention computation proceeds identically to MHA after broadcasting
 5. Cache stores original (non-broadcasted) K/V to save memory
 
-#### `AttentionWithEinops`
+#### `Attention` - Unified Implementation
+
+The `Attention` class supports both einops and PyTorch implementations via the `use_einops` flag:
+
+**With Einops (`use_einops=True`):**
 
 **Step 1: Compute Q, K, V**
 ```python
@@ -987,7 +995,7 @@ output = einops.einsum(
 
 **What's happening**: Combine all heads and project back to `d_model` dimensions.
 
-#### `AttentionWithoutEinops`
+**Without Einops (`use_einops=False`):**
 
 Same logic, but using PyTorch operations:
 ```python
@@ -1087,7 +1095,11 @@ Input → [Gate Branch: Linear → Swish] × [Up Branch: Linear] → Linear(d_ml
 
 Uses 3 weight matrices: `W_gate`, `W_up`, and `W_out`
 
-#### `MLPWithEinops`
+#### `MLP` - Unified Implementation
+
+The `MLP` class supports both einops and PyTorch implementations via the `use_einops` flag:
+
+**With Einops (`use_einops=True`):**
 
 ```python
 # First linear layer
@@ -1117,6 +1129,10 @@ output = einops.einsum(
 - Expands to `d_mlp` (typically 4x `d_model`) for more capacity
 - GELU provides non-linearity
 - Projects back to `d_model`
+
+**Without Einops (`use_einops=False`):**
+
+Same logic using PyTorch operations (typically using `torch.einsum` or `torch.matmul`).
 
 **Why GELU?**
 - GELU (Gaussian Error Linear Unit) is smoother than ReLU

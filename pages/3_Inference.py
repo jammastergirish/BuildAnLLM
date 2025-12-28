@@ -7,10 +7,7 @@ from pretraining.tokenization.tokenizer import (
     SentencePieceTokenizer,
     SimpleBPETokenizer,
 )
-from pretraining.model.model import (
-    TransformerModelWithEinops,
-    TransformerModelWithoutEinops,
-)
+from pretraining.model.model import TransformerModel
 from inference.sampler import TransformerSampler
 import os
 import sys

@@ -1,10 +1,30 @@
+"""Text generation sampler with support for temperature, top-k, and top-p sampling.
+
+This module implements autoregressive text generation from transformer models with
+support for various sampling strategies and KV caching for efficient inference.
+
+Sampling Strategies:
+- Temperature: Scales logits before softmax (higher = more random)
+- Top-k: Only sample from top k most likely tokens
+- Top-p (Nucleus): Sample from tokens until cumulative probability > p
+- Combined: Can use temperature + top-k + top-p together
+
+Design Decision: KV Caching
+- Cache K/V tensors from previous tokens to avoid recomputation
+- Only compute Q, K, V for new tokens each step
+- Dramatically faster for long sequences (10-100x speedup)
+"""
+
+from typing import Optional
 import torch
 import torch.nn.functional as F
-from typing import Optional
 
 
 class TransformerSampler:
-    """Sampler for generating text from a trained transformer model"""
+    """Sampler for generating text from a trained transformer model.
+
+    Supports multiple sampling strategies and efficient KV caching for fast generation.
+    """
 
     def __init__(
         self,
@@ -12,10 +32,218 @@ class TransformerSampler:
         tokenizer,
         device: torch.device,
     ):
+        """Initialize sampler.
+
+        Args:
+            model: Trained transformer model
+            tokenizer: Tokenizer for encoding/decoding text
+            device: Device to run generation on
+        """
         self.model = model
         self.tokenizer = tokenizer
         self.device = device
         self.model.eval()
+
+    def _apply_top_k(
+        self,
+        logits: torch.Tensor,
+        top_k: int
+    ) -> torch.Tensor:
+        """Apply top-k filtering to logits.
+
+        Only keeps the top k most likely tokens, sets all others to -inf.
+        This prevents sampling very unlikely tokens.
+
+        Args:
+            logits: Logits tensor [vocab_size]
+            top_k: Number of top tokens to keep
+
+        Returns:
+            Filtered logits [vocab_size] (unlikely tokens set to -inf)
+        """
+        # Get threshold: k-th highest logit value
+        # topk_values: [top_k] - top k logit values
+        # topk_values[..., -1] is the k-th highest (lowest of top k)
+        threshold = torch.topk(logits, top_k)[0][..., -1, None]
+        # Set all tokens below threshold to -inf
+        indices_to_remove = logits < threshold
+        logits = logits.clone()  # Avoid modifying original
+        logits[indices_to_remove] = float("-inf")
+        return logits
+
+    def _apply_top_p(
+        self,
+        logits: torch.Tensor,
+        top_p: float
+    ) -> torch.Tensor:
+        """Apply top-p (nucleus) filtering to logits.
+
+        Keeps tokens until cumulative probability exceeds top_p.
+        This is adaptive: considers more tokens when distribution is flat.
+
+        Formula:
+        1. Sort logits descending
+        2. Compute cumulative probabilities
+        3. Keep tokens until cumulative prob > top_p
+        4. Set rest to -inf
+
+        Args:
+            logits: Logits tensor [vocab_size]
+            top_p: Cumulative probability threshold (e.g., 0.9)
+
+        Returns:
+            Filtered logits [vocab_size] (low-probability tokens set to -inf)
+        """
+        # Sort logits descending
+        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+
+        # Compute cumulative probabilities
+        # cumulative_probs: [vocab_size] - cumulative sum of sorted probabilities
+        probs = F.softmax(sorted_logits, dim=-1)
+        cumulative_probs = torch.cumsum(probs, dim=-1)
+
+        # Find tokens to remove (cumulative prob > top_p)
+        # sorted_indices_to_remove: [vocab_size] - boolean mask
+        sorted_indices_to_remove = cumulative_probs > top_p
+        # Shift mask: keep first token that exceeds threshold
+        sorted_indices_to_remove[...,
+                                 1:] = sorted_indices_to_remove[..., :-1].clone()
+        sorted_indices_to_remove[..., 0] = 0
+
+        # Map back to original indices
+        # indices_to_remove: [vocab_size] - boolean mask in original order
+        indices_to_remove = sorted_indices_to_remove.scatter(
+            0, sorted_indices, sorted_indices_to_remove
+        )
+
+        # Set removed tokens to -inf
+        logits = logits.clone()  # Avoid modifying original
+        logits[indices_to_remove] = float("-inf")
+        return logits
+
+    def _process_prompt(
+        self,
+        tokens_tensor: torch.Tensor
+    ) -> tuple[torch.Tensor, Optional[list], bool, int]:
+        """Process initial prompt and initialize KV cache.
+
+        Args:
+            tokens_tensor: Prompt tokens [1, prompt_len]
+
+        Returns:
+            Tuple of (logits, kv_cache, use_cache, start_pos) where:
+            - logits: [vocab_size] - logits for last position (not temperature-scaled)
+            - kv_cache: KV cache list or None
+            - use_cache: Whether cache is available
+            - start_pos: Starting position for next token
+        """
+        prompt_len = tokens_tensor.shape[1]
+
+        # Try to get model predictions with cache support
+        try:
+            result = self.model(tokens_tensor, cache=None, start_pos=0)
+            if isinstance(result, tuple):
+                logits, kv_cache = result
+                use_cache = True
+            else:
+                logits = result
+                kv_cache = None
+                use_cache = False
+        except TypeError:
+            # Backward compatibility: model doesn't support cache
+            logits = self.model(tokens_tensor)
+            kv_cache = None
+            use_cache = False
+
+        # Extract logits for last position (temperature applied later)
+        logits = logits[0, -1, :]
+        start_pos = prompt_len
+
+        return logits, kv_cache, use_cache, start_pos
+
+    def _generate_next_token(
+        self,
+        logits: torch.Tensor,
+        temperature: float,
+        top_k: Optional[int],
+        top_p: Optional[float]
+    ) -> torch.Tensor:
+        """Generate next token from logits with sampling strategies.
+
+        Applies temperature, top-k, and top-p filtering, then samples.
+
+        Args:
+            logits: Logits tensor [vocab_size]
+            temperature: Sampling temperature (higher = more random)
+            top_k: Optional top-k filtering
+            top_p: Optional top-p (nucleus) filtering
+
+        Returns:
+            Next token ID [1]
+        """
+        # Apply temperature scaling
+        # Formula: scaled_logits = logits / temperature
+        # temperature < 1: more focused (deterministic)
+        # temperature = 1: balanced
+        # temperature > 1: more creative (random)
+        logits = logits / temperature
+
+        # Apply top-k filtering (if specified)
+        if top_k is not None:
+            logits = self._apply_top_k(logits, top_k)
+
+        # Apply top-p (nucleus) filtering (if specified)
+        if top_p is not None:
+            logits = self._apply_top_p(logits, top_p)
+
+        # Sample from the filtered distribution
+        probs = F.softmax(logits, dim=-1)
+        next_token = torch.multinomial(probs, num_samples=1)
+
+        return next_token
+
+    def _update_cache(
+        self,
+        tokens_tensor: torch.Tensor,
+        kv_cache: Optional[list],
+        start_pos: int,
+        use_cache: bool
+    ) -> tuple[torch.Tensor, Optional[list], bool]:
+        """Update KV cache and get logits for current sequence.
+
+        Args:
+            tokens_tensor: Current token sequence [1, seq_len]
+            kv_cache: Current KV cache or None
+            start_pos: Starting position for RoPE
+            use_cache: Whether to use cache
+
+        Returns:
+            Tuple of (logits, updated_kv_cache, use_cache) where:
+            - logits: [vocab_size] - logits for last token (not temperature-scaled)
+            - updated_kv_cache: Updated cache or None
+            - use_cache: Whether cache is still available
+        """
+        if use_cache and kv_cache is not None:
+            # Process only the new token with cache (efficient!)
+            # tokens_tensor[-1:] gets the last token: [1, 1]
+            new_token_tensor = tokens_tensor[:, -1:]  # [1, 1]
+            try:
+                result = self.model(
+                    new_token_tensor, cache=kv_cache, start_pos=start_pos)
+                if isinstance(result, tuple):
+                    logits, kv_cache = result
+                    return logits[0, -1, :], kv_cache, True
+                return result[0, -1, :], None, False
+            except TypeError:
+                # Backward compatibility: model doesn't support cache
+                logits = self.model(new_token_tensor)
+                return logits[0, -1, :], None, False
+        # Fallback: process full sequence (no cache)
+        logits = self.model(tokens_tensor)
+        if isinstance(logits, tuple):
+            logits, kv_cache = logits
+            return logits[0, -1, :], kv_cache, True
+        return logits[0, -1, :], None, False
 
     @torch.no_grad()
     def sample(
@@ -35,9 +263,11 @@ class TransformerSampler:
             temperature: Sampling temperature (higher = more random)
             top_k: If set, only sample from top k most likely tokens
             top_p: If set, use nucleus sampling (top_p cumulative probability)
+
+        Returns:
+            Generated text (prompt + generated tokens)
         """
         # Encode prompt
-        # tokens: [seq_len] - list of token IDs
         tokens = self.tokenizer.encode(prompt)
 
         # Get context length from model config
@@ -47,125 +277,40 @@ class TransformerSampler:
         if len(tokens) > n_ctx:
             tokens = tokens[-n_ctx:]  # Keep only the last n_ctx tokens
 
-        # tokens_tensor: [1, seq_len] - add batch dimension
+        # Convert to tensor with batch dimension
         tokens_tensor = torch.tensor(
             [tokens], dtype=torch.long, device=self.device)
 
-        # Initialize KV cache
-        kv_cache = None
-        start_pos = 0
-
-        # Process prompt (first forward pass)
-        prompt_len = tokens_tensor.shape[1]
-        if prompt_len > n_ctx:
-            tokens_tensor = tokens_tensor[:, -n_ctx:]
-            prompt_len = n_ctx
-
-        # Get model predictions for prompt
-        try:
-            result = self.model(tokens_tensor, cache=None, start_pos=0)
-            if isinstance(result, tuple):
-                logits, kv_cache = result
-                use_cache = True
-            else:
-                # Backward compatibility: model doesn't support cache
-                logits = result
-                kv_cache = None
-                use_cache = False
-        except TypeError:
-            # Backward compatibility: model doesn't support cache
-            logits = self.model(tokens_tensor)
-            kv_cache = None
-            use_cache = False
-
-        # Get logits for last position of prompt
-        logits = logits[0, -1, :] / temperature
-        start_pos = prompt_len
+        # Process prompt and initialize cache
+        logits, kv_cache, use_cache, start_pos = self._process_prompt(
+            tokens_tensor)
 
         # Generate new tokens
         for _ in range(max_new_tokens):
-            # Apply top_k filtering
-            if top_k is not None:
-                # indices_to_remove: [vocab_size] - boolean mask
-                indices_to_remove = logits < torch.topk(logits, top_k)[
-                    0][..., -1, None]
-                logits[indices_to_remove] = float("-inf")
-
-            # Apply top_p (nucleus) filtering
-            if top_p is not None:
-                # sorted_logits: [vocab_size] - sorted descending
-                # sorted_indices: [vocab_size] - original indices
-                sorted_logits, sorted_indices = torch.sort(
-                    logits, descending=True)
-                # cumulative_probs: [vocab_size] - cumulative probabilities
-                cumulative_probs = torch.cumsum(
-                    F.softmax(sorted_logits, dim=-1), dim=-1
-                )
-                # Remove tokens with cumulative probability above threshold
-                # sorted_indices_to_remove: [vocab_size] - boolean mask
-                sorted_indices_to_remove = cumulative_probs > top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[
-                    ..., :-1
-                ].clone()
-                sorted_indices_to_remove[..., 0] = 0
-                # indices_to_remove: [vocab_size] - boolean mask
-                indices_to_remove = sorted_indices_to_remove.scatter(
-                    0, sorted_indices, sorted_indices_to_remove
-                )
-                logits[indices_to_remove] = float("-inf")
-
-            # Sample from the distribution
-            # probs: [vocab_size] - probability distribution
-            probs = F.softmax(logits, dim=-1)
-            # next_token: [1] - sampled token ID
-            next_token = torch.multinomial(probs, num_samples=1)
+            # Apply temperature and sampling strategies to get next token
+            next_token = self._generate_next_token(
+                logits, temperature, top_k, top_p)
 
             # Append to sequence
-            # next_token.unsqueeze(0): [1, 1] - add batch and position dims
-            # tokens_tensor: [1, seq_len] -> [1, seq_len + 1]
             tokens_tensor = torch.cat(
                 [tokens_tensor, next_token.unsqueeze(0)], dim=1)
 
             # Check if we need to truncate (shouldn't happen often with cache)
             if tokens_tensor.shape[1] > n_ctx:
                 tokens_tensor = tokens_tensor[:, -n_ctx:]
-                # Reset cache if we truncate (for simplicity, could optimize this)
                 kv_cache = None
                 use_cache = False
                 start_pos = 0
 
-            # Process only the new token with cache
-            if use_cache and kv_cache is not None:
-                # Only process the new token: [1, 1]
-                new_token_tensor = next_token.unsqueeze(0)  # [1, 1]
-                try:
-                    result = self.model(new_token_tensor, cache=kv_cache, start_pos=start_pos)
-                    if isinstance(result, tuple):
-                        logits, kv_cache = result
-                    else:
-                        logits = result
-                        kv_cache = None
-                        use_cache = False
-                except TypeError:
-                    logits = self.model(new_token_tensor)
-                    kv_cache = None
-                    use_cache = False
-            else:
-                # Fallback: process full sequence (no cache)
-                logits = self.model(tokens_tensor)
-                if isinstance(logits, tuple):
-                    logits, kv_cache = logits
-                    use_cache = True
-            
-            # Get logits for last position only
-            # logits: [vocab_size] - logits for last token position
-            logits = logits[0, -1, :] / temperature
-            
+            # Update cache and get logits for next iteration
+            logits, kv_cache, use_cache = self._update_cache(
+                tokens_tensor, kv_cache, start_pos, use_cache
+            )
+
             # Update start_pos for next iteration
             start_pos += 1
 
         # Decode and return
-        # generated_tokens: [total_seq_len] - list of all token IDs
         generated_tokens = tokens_tensor[0].tolist()
         return self.tokenizer.decode(generated_tokens)
 
@@ -178,7 +323,18 @@ class TransformerSampler:
         top_k: Optional[int] = None,
         top_p: Optional[float] = None,
     ) -> list[str]:
-        """Generate text for multiple prompts in a batch"""
+        """Generate text for multiple prompts in a batch.
+
+        Args:
+            prompts: List of prompt strings
+            max_new_tokens: Maximum tokens to generate per prompt
+            temperature: Sampling temperature
+            top_k: Optional top-k filtering
+            top_p: Optional top-p filtering
+
+        Returns:
+            List of generated text strings
+        """
         results = []
         for prompt in prompts:
             results.append(
@@ -191,4 +347,3 @@ class TransformerSampler:
                 )
             )
         return results
-

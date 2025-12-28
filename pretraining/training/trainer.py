@@ -5,41 +5,7 @@ import os
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from pretraining.training.training_args import TransformerTrainingArgs
-
-
-def _extract_model_output_and_aux_loss(model_output):
-    """Extract logits and auxiliary loss from model output (handles both MoE and standard models)."""
-    if isinstance(model_output, tuple):
-        # Handle different return formats:
-        # - (logits, cache, aux_loss) - MoE with cache
-        # - (logits, cache) - standard with cache
-        # - (logits, aux_loss) - MoE without cache
-        if len(model_output) == 3:
-            logits, _, aux_loss = model_output
-        elif len(model_output) == 2:
-            # Could be (logits, cache) or (logits, aux_loss)
-            # Check if second element is a list (cache) or scalar (aux_loss)
-            if isinstance(model_output[1], list):
-                logits, _ = model_output
-                aux_loss = None
-            else:
-                logits, aux_loss = model_output
-        else:
-            logits = model_output[0]
-            aux_loss = None
-    else:
-        logits = model_output
-        aux_loss = None
-    return logits, aux_loss
-
-
-def _add_aux_loss_to_main_loss(loss, aux_loss, model):
-    """Add auxiliary loss to main loss if MoE is enabled."""
-    if aux_loss is not None:
-        cfg = model.cfg if hasattr(model, "cfg") else None
-        if cfg and hasattr(cfg, "load_balancing_loss_weight"):
-            loss = loss + aux_loss * cfg.load_balancing_loss_weight
-    return loss
+from pretraining.utils import extract_model_output_and_aux_loss, add_aux_loss_to_main_loss
 
 
 class TransformerTrainer:
@@ -89,38 +55,116 @@ class TransformerTrainer:
         if hasattr(args, "save_dir"):
             os.makedirs(args.save_dir, exist_ok=True)
 
+    def _evaluate_batch(
+        self,
+        x_batch: torch.Tensor,
+        y_batch: torch.Tensor
+    ) -> float:
+        """Compute loss for a single batch.
+
+        Args:
+            x_batch: Input tokens [batch_size, seq_len]
+            y_batch: Target tokens [batch_size, seq_len]
+
+        Returns:
+            Loss value (scalar float)
+        """
+        model_output = self.model(x_batch)
+        logits, aux_loss = extract_model_output_and_aux_loss(model_output)
+
+        # Reshape for cross_entropy: (batch*seq, vocab) and (batch*seq,)
+        loss = F.cross_entropy(
+            logits.view(-1, logits.size(-1)), y_batch.view(-1)
+        )
+        loss = add_aux_loss_to_main_loss(loss, aux_loss, self.model)
+        return loss.item()
+
+    def _evaluate_split(
+        self,
+        split_name: str,
+        split_X: torch.Tensor,
+        split_Y: torch.Tensor
+    ) -> float:
+        """Evaluate one split (train or val).
+
+        Computes average loss over multiple random batches from the split.
+
+        Args:
+            split_name: Name of split ("train" or "val")
+            split_X: Input tokens for split
+            split_Y: Target tokens for split
+
+        Returns:
+            Average loss over evaluation iterations
+        """
+        losses = torch.zeros(self.eval_iters)
+        for k in tqdm(
+            range(self.eval_iters),
+            desc=f"Evaluating {split_name}",
+            leave=False,
+        ):
+            # Random batch
+            idx = torch.randint(0, len(split_X), (self.args.batch_size,))
+            x_batch = split_X[idx].to(self.device)
+            y_batch = split_Y[idx].to(self.device)
+
+            losses[k] = self._evaluate_batch(x_batch, y_batch)
+
+        return losses.mean().item()
+
     @torch.no_grad()
     def estimate_loss(self):
-        """Estimate loss on train and val sets"""
+        """Estimate loss on train and val sets."""
         out = {}
         self.model.eval()
-        for split_name, split_X, split_Y in [
-            ("train", self.X_train, self.Y_train),
-            ("val", self.X_val, self.Y_val),
-        ]:
-            losses = torch.zeros(self.eval_iters)
-            for k in tqdm(
-                range(self.eval_iters),
-                desc=f"Evaluating {split_name}",
-                leave=False,
-            ):
-                # Random batch
-                idx = torch.randint(0, len(split_X), (self.args.batch_size,))
-                x_batch = split_X[idx].to(self.device)
-                y_batch = split_Y[idx].to(self.device)
 
-                model_output = self.model(x_batch)
-                logits, aux_loss = _extract_model_output_and_aux_loss(model_output)
-                
-                # Reshape for cross_entropy: (batch*seq, vocab) and (batch*seq,)
-                loss = F.cross_entropy(
-                    logits.view(-1, logits.size(-1)), y_batch.view(-1)
-                )
-                loss = _add_aux_loss_to_main_loss(loss, aux_loss, self.model)
-                losses[k] = loss.item()
-            out[split_name] = losses.mean().item()
+        # Evaluate train split
+        out["train"] = self._evaluate_split(
+            "train", self.X_train, self.Y_train)
+
+        # Evaluate val split
+        out["val"] = self._evaluate_split("val", self.X_val, self.Y_val)
+
         self.model.train()
         return out
+
+    def _training_step(
+        self,
+        x_batch: torch.Tensor,
+        y_batch: torch.Tensor
+    ) -> torch.Tensor:
+        """Perform one training step.
+
+        Handles forward pass, loss computation (including aux_loss from MoE),
+        backward pass, and optimizer step.
+
+        Args:
+            x_batch: Input tokens [batch_size, seq_len]
+            y_batch: Target tokens [batch_size, seq_len]
+
+        Returns:
+            Loss tensor (scalar)
+        """
+        # Forward pass
+        # logits: [batch_size, seq_len, vocab_size]
+        # May return (logits, aux_loss) if MoE is enabled
+        model_output = self.model(x_batch)
+        logits, aux_loss = extract_model_output_and_aux_loss(model_output)
+
+        # Reshape for cross_entropy
+        # logits.view(-1, logits.size(-1)): [batch_size * seq_len, vocab_size]
+        # y_batch.view(-1): [batch_size * seq_len]
+        loss = F.cross_entropy(
+            logits.view(-1, logits.size(-1)), y_batch.view(-1)
+        )
+        loss = add_aux_loss_to_main_loss(loss, aux_loss, self.model)
+
+        # Backward pass
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        return loss
 
     def train(self):
         """Main training loop"""
@@ -143,24 +187,8 @@ class TransformerTrainer:
             x_batch = self.X_train[idx].to(self.device)
             y_batch = self.Y_train[idx].to(self.device)
 
-            # Forward pass
-            # logits: [batch_size, seq_len, vocab_size]
-            # May return (logits, aux_loss) if MoE is enabled
-            model_output = self.model(x_batch)
-            logits, aux_loss = _extract_model_output_and_aux_loss(model_output)
-            
-            # Reshape for cross_entropy
-            # logits.view(-1, logits.size(-1)): [batch_size * seq_len, vocab_size]
-            # y_batch.view(-1): [batch_size * seq_len]
-            loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)), y_batch.view(-1)
-            )
-            loss = _add_aux_loss_to_main_loss(loss, aux_loss, self.model)
-
-            # Backward pass
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            # Perform training step
+            loss = self._training_step(x_batch, y_batch)
 
             # Update running loss
             self.running_loss = (
@@ -240,8 +268,12 @@ class TransformerTrainer:
         cfg = self.model.cfg if hasattr(self.model, "cfg") else None
         cfg_dict = cfg.to_dict() if cfg is not None else None
 
-        # Determine model type from model class name
-        model_type = "with_einops" if "WithEinops" in self.model.__class__.__name__ else "without_einops"
+        # Determine model type from use_einops attribute (if available)
+        # Otherwise check class name for backward compatibility
+        if hasattr(self.model, "use_einops"):
+            model_type = "with_einops" if self.model.use_einops else "without_einops"
+        else:
+            model_type = "with_einops" if "WithEinops" in self.model.__class__.__name__ else "without_einops"
 
         torch.save(
             {
@@ -295,4 +327,3 @@ class TransformerTrainer:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         print(f"Checkpoint loaded from {filepath}")
         return checkpoint
-

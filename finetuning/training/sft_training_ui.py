@@ -122,17 +122,10 @@ def _sft_training_step(trainer, iter_num, first_loss_set):
     masks_batch = trainer.masks_train[idx].to(trainer.device)
 
     logits = trainer.model(x_batch)
-    
-    # Compute masked loss (only on response tokens)
-    logits_flat = logits.view(-1, logits.size(-1))
-    targets_flat = y_batch.view(-1)
-    masks_flat = masks_batch.view(-1)
-    
-    loss_unmasked = torch.nn.functional.cross_entropy(
-        logits_flat, targets_flat, reduction='none'
-    )
-    
+
     # Check if there are any response tokens (mask == 1)
+    # This check provides better error messages than the clamp in _compute_masked_loss
+    masks_flat = masks_batch.view(-1)
     mask_sum = masks_flat.sum()
     if mask_sum == 0:
         raise ValueError(
@@ -140,8 +133,9 @@ def _sft_training_step(trainer, iter_num, first_loss_set):
             "This means the model has no response tokens to learn from. "
             "Check your dataset - prompts might be too long or responses might be empty."
         )
-    
-    loss = (loss_unmasked * masks_flat).sum() / mask_sum
+
+    # Use the existing helper method from SFTTrainer
+    loss = trainer._compute_masked_loss(logits, y_batch, masks_batch)
 
     trainer.optimizer.zero_grad()
     loss.backward()
@@ -229,4 +223,3 @@ def _finalize_training(trainer, max_iters, training_active_flag,
         progress_data["progress"] = 1.0
         shared_logs.append(
             f"Final progress: {progress_data['progress']*100:.1f}%")
-

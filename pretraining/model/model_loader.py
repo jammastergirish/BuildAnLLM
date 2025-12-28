@@ -3,7 +3,7 @@
 import torch
 from typing import Dict, Any, Tuple
 from config import ModelConfig
-from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
+from pretraining.model.model import TransformerModel
 from pretraining.training.training_args import TransformerTrainingArgs
 from utils import print_state_dict_warnings
 
@@ -78,10 +78,8 @@ def _extract_config(checkpoint: Dict) -> ModelConfig:
 
 def _create_model(cfg: ModelConfig, model_type: str):
     """Create model instance based on type."""
-    if model_type == "with_einops":
-        return TransformerModelWithEinops(cfg)
-    else:
-        return TransformerModelWithoutEinops(cfg)
+    use_einops = (model_type == "with_einops")
+    return TransformerModel(cfg, use_einops=use_einops)
 
 
 def _load_state_dict(model, checkpoint: Dict, device: torch.device) -> None:

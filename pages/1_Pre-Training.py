@@ -10,7 +10,7 @@ from config import ModelConfig, Architecture, PositionalEncoding, Normalization,
 from pretraining.training.training_args import TransformerTrainingArgs
 from pretraining.training.trainer import TransformerTrainer
 from pretraining.data.dataset import TransformerDataset
-from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
+from pretraining.model.model import TransformerModel
 from pretraining.training.training_ui import initialize_training_state, train_model_thread
 from ui_components import (
     render_model_config_ui, render_model_architecture_diagram, render_model_equations,
@@ -79,8 +79,8 @@ def _start_training_workflow(uploaded_file, model_config, tokenizer_type, use_ei
 
     # Initialize model
     device = st.session_state.get_device()
-    model = TransformerModelWithEinops(
-        cfg) if use_einops else TransformerModelWithoutEinops(cfg)
+    from pretraining.model.model import TransformerModel
+    model = TransformerModel(cfg, use_einops=use_einops)
     model = model.to(device)
 
     param_count = sum(p.numel() for p in model.parameters()) / 1e6

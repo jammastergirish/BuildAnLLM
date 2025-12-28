@@ -1584,7 +1584,7 @@ def _get_class_source_with_lines(module_path: str, class_name: str, method_name:
 
     Args:
         module_path: Path to module (e.g., "pretraining.model.model")
-        class_name: Name of class (e.g., "TransformerModelWithEinops")
+        class_name: Name of class (e.g., "TransformerModel")
         method_name: Name of method (default: "forward")
 
     Returns:
@@ -1617,7 +1617,7 @@ def _get_object_source_with_lines(module_path: str, object_name: str) -> Tuple[s
 
     Args:
         module_path: Path to module (e.g., "pretraining.model.model")
-        object_name: Name of class or function (e.g., "TransformerModelWithEinops" or "convert_model_to_lora")
+        object_name: Name of class or function (e.g., "TransformerModel" or "convert_model_to_lora")
 
     Returns:
         Tuple of (source_code, start_line, end_line, file_path)
@@ -1677,62 +1677,62 @@ def _determine_components_to_show(config: Dict) -> Dict[str, Dict]:
 
     components = {}
 
-    # Model
+    # Model (unified class - use_einops is handled internally)
     components["model"] = {
-        "class": "TransformerModelWithEinops" if use_einops else "TransformerModelWithoutEinops",
+        "class": "TransformerModel",
         "use_einops": use_einops
     }
 
-    # Transformer Block
+    # Transformer Block (unified class - use_einops is handled internally)
     components["transformer_block"] = {
-        "class": "TransformerBlockWithEinops" if use_einops else "TransformerBlockWithoutEinops",
+        "class": "TransformerBlock",
         "use_einops": use_einops
     }
 
-    # Attention
+    # Attention (unified class - use_einops is handled internally)
     components["attention"] = {
-        "class": "AttentionWithEinops" if use_einops else "AttentionWithoutEinops",
+        "class": "Attention",
         "pos_enc": pos_enc
     }
 
-    # MLP
+    # MLP (unified classes - use_einops is handled internally)
     use_moe = config.get("use_moe", False)
     if use_moe:
         # MoE MLP classes
         components["mlp"] = {
-            "class": "MoEMLPWithEinops" if use_einops else "MoEMLPWithoutEinops",
+            "class": "MoEMLP",
             "activation": activation,
             "use_moe": True
         }
     elif activation == "swiglu":
         components["mlp"] = {
-            "class": "MLPSwiGLUWithEinops" if use_einops else "MLPSwiGLUWithoutEinops",
+            "class": "MLPSwiGLU",
             "activation": activation
         }
     else:  # gelu
         components["mlp"] = {
-            "class": "MLPWithEinops" if use_einops else "MLPWithoutEinops",
+            "class": "MLP",
             "activation": activation
         }
 
-    # Normalization
+    # Normalization (unified classes - use_einops is handled internally)
     if norm == "rmsnorm":
         components["normalization"] = {
-            "class": "RMSNormWithEinops" if use_einops else "RMSNormWithoutEinops",
+            "class": "RMSNorm",
             "file": "rmsnorm",
             "norm": norm
         }
     else:  # layernorm
         components["normalization"] = {
-            "class": "LayerNormWithEinops" if use_einops else "LayerNormWithoutEinops",
+            "class": "LayerNorm",
             "file": "layernorm",
             "norm": norm
         }
 
-    # Positional Encoding
+    # Positional Encoding (unified class - use_einops is handled internally)
     if pos_enc == "learned":
         components["positional_encoding"] = {
-            "class": "PosEmbedWithEinops" if use_einops else "PosEmbedWithoutEinops",
+            "class": "PosEmbed",
             "type": "learned",
             "module": "pretraining.positional_embeddings.positional_embedding"
         }

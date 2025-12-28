@@ -12,7 +12,7 @@ from config import ModelConfig
 from pretraining.training.training_args import TransformerTrainingArgs
 from pretraining.training.trainer import TransformerTrainer
 from pretraining.data.dataset import TransformerDataset
-from pretraining.model.model import TransformerModelWithEinops, TransformerModelWithoutEinops
+from pretraining.model.model import TransformerModel
 
 
 def main():
@@ -108,12 +108,9 @@ def main():
     cfg = dataset.cfg
 
     # Initialize model
-    if args.use_einops:
-        model = TransformerModelWithEinops(cfg)
-        model_type_str = "with_einops"
-    else:
-        model = TransformerModelWithoutEinops(cfg)
-        model_type_str = "without_einops"
+    from pretraining.model.model import TransformerModel
+    model = TransformerModel(cfg, use_einops=args.use_einops)
+    model_type_str = "with_einops" if args.use_einops else "without_einops"
 
     model = model.to(device)
     print(f"\nInitialized {args.architecture} model ({model_type_str})")
