@@ -18,7 +18,7 @@ import torch.nn as nn
 import einops
 from jaxtyping import Float
 from torch import Tensor
-from typing import Optional
+from typing import Optional, Union
 
 
 class Attention(nn.Module):
@@ -192,19 +192,26 @@ class Attention(nn.Module):
         self, 
         residual: Float[Tensor, "batch posn d_model"],
         cache: Optional[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"], Float[Tensor, "batch cache_len n_kv_heads d_head"]]] = None,
-        start_pos: int = 0
-    ) -> tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]]]:
+        start_pos: int = 0,
+        return_attention_pattern: bool = False
+    ) -> Union[
+        tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]]],
+        tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]], Float[Tensor, "batch n_heads posn_q posn_k"]]
+    ]:
         """Forward pass through attention layer.
         
         Args:
             residual: Input tensor [batch, posn, d_model]
             cache: Optional KV cache tuple (K_cache, V_cache) for efficient inference
             start_pos: Starting position for RoPE (used with cache)
+            return_attention_pattern: If True, return attention weights
         
         Returns:
             Tuple of (output, (K_cache, V_cache)) where:
             - output: [batch, posn, d_model] - attention output
             - K_cache, V_cache: [batch, new_cache_len, n_kv_heads, d_head] - updated cache
+            
+            If return_attention_pattern is True, returns (output, cache, attn_pattern)
         """
         seq_len = residual.shape[1]
 
@@ -303,6 +310,8 @@ class Attention(nn.Module):
         output = self._project_output(attn_output)
 
         # Return cache: use the original (non-broadcasted) K/V to save memory
+        if return_attention_pattern:
+            return output, (k_for_cache, v_for_cache), attn_pattern
         return output, (k_for_cache, v_for_cache)
 
 

@@ -4,6 +4,7 @@ import streamlit as st
 import os
 import threading
 import time
+import pandas as pd
 from datetime import datetime
 
 from config import ModelConfig, Architecture, PositionalEncoding, Normalization, Activation
@@ -12,6 +13,7 @@ from pretraining.training.trainer import TransformerTrainer
 from pretraining.data.dataset import TransformerDataset
 from pretraining.model.model import TransformerModel
 from pretraining.training.training_ui import initialize_training_state, train_model_thread
+from utils import get_device
 from ui_components import (
     render_model_config_ui, render_model_architecture_diagram, render_model_equations,
     render_model_code_snippets, format_elapsed_time, get_total_training_time,
@@ -78,7 +80,7 @@ def _start_training_workflow(uploaded_file, model_config, tokenizer_type, use_ei
     X_val, Y_val = dataset.get_val_data()
 
     # Initialize model
-    device = st.session_state.get_device()
+    device = get_device()
     from pretraining.model.model import TransformerModel
     model = TransformerModel(cfg, use_einops=use_einops)
     model = model.to(device)
@@ -292,17 +294,175 @@ with st.container():
 with st.container():
     st.markdown("### 🚀 6. Start Training")
 
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+    col1, col2, col3, col4 = st.columns([1.5, 1, 1, 1.5])
+    
+    # Initialize button states to avoid NameError
+    start_training = False
+    stop_training = False
 
-    with col2:
-        start_training = st.button(
-            "🚀 Start Training", type="primary", width='stretch',
-            help="Begin training with current configuration")
-    with col3:
-        stop_training = st.button(
-            "⏹️ Stop Training", width='stretch',
-            help="Stop the current training run",
-            disabled=not st.session_state.training_active)
+    # Manual Stepper Mode Toggle
+    with col1:
+        manual_mode = st.toggle("👣 Manual Stepper Mode", help="Enable to manually step through training batch-by-batch (Educational)")
+
+    if manual_mode:
+        # Initialize manual session if needed
+        if "manual_trainer" not in st.session_state:
+            st.session_state.manual_initialized = False
+            
+        with col2:
+            init_manual = st.button("Init/Reset Manual", type="primary", use_container_width=True)
+            
+
+        
+        # Manual Training Logic
+        if init_manual:
+             with st.spinner("Initializing Manual Trainer..."):
+                 # Use same setup logic as full workflow but don't start thread
+                 # Load text
+                 if uploaded_file:
+                     text = uploaded_file.read().decode("utf-8")
+                 else:
+                     with open("training.txt", "r", encoding="utf-8") as f:
+                         text = f.read()
+                 
+                 # Create config/dataset/model
+                 cfg = _create_model_config(model_config)
+                 dataset = TransformerDataset(text, cfg, tokenizer_type=tokenizer_type)
+                 cfg = dataset.cfg
+                 device = get_device()
+                 model = TransformerModel(cfg, use_einops=use_einops).to(device)
+                 
+                 training_args = TransformerTrainingArgs(
+                     batch_size=batch_size, epochs=epochs, max_steps_per_epoch=max_steps_per_epoch,
+                     lr=learning_rate, weight_decay=weight_decay, eval_iters=10
+                 )
+                 
+                 st.session_state.manual_trainer = TransformerTrainer(
+                     model, training_args, *dataset.get_train_data(), *dataset.get_val_data(), 
+                     device=device, tokenizer_type=tokenizer_type
+                 )
+                 st.session_state.manual_trainer = TransformerTrainer(
+                     model, training_args, *dataset.get_train_data(), *dataset.get_val_data(), 
+                     device=device, tokenizer_type=tokenizer_type
+                 )
+                 st.session_state.manual_tokenizer = dataset.tokenizer # Store for decoding
+                 st.session_state.manual_initialized = True
+                 st.session_state.manual_logs = []
+                 st.success("Ready to step!")
+                 st.rerun()
+
+        # Step Progress Logic
+        if st.session_state.get("manual_initialized", False) and "manual_logs" in st.session_state:
+            current_step = len(st.session_state.manual_logs)
+            total_steps = st.session_state.manual_trainer.max_iters
+            progress = min(current_step / total_steps, 1.0)
+            st.progress(progress, text=f"Training Progress: Batch {current_step} / {total_steps}")
+
+        # Auto-Step Controls
+        with col2:
+             # Toggle auto-stepping
+             if "auto_stepping" not in st.session_state:
+                 st.session_state.auto_stepping = False
+                 
+             if st.session_state.auto_stepping:
+                 if st.button("⏸️ Pause", use_container_width=True):
+                     st.session_state.auto_stepping = False
+                     st.rerun()
+             else:
+                 if st.button("▶️ Auto-Step", use_container_width=True, disabled=not st.session_state.get("manual_initialized", False)):
+                     st.session_state.auto_stepping = True
+                     st.rerun()
+                     
+        with col3:
+             step_btn = st.button("👣 Step (1 Batch)", type="primary", use_container_width=True, 
+                                 disabled=not st.session_state.get("manual_initialized", False))
+        
+        # Logic for performing a step (either manual click or auto-step)
+        should_step = False
+        if step_btn and st.session_state.get("manual_initialized", False):
+            should_step = True
+        elif st.session_state.get("auto_stepping", False) and st.session_state.get("manual_initialized", False):
+            should_step = True
+            
+        if should_step:
+             metrics = st.session_state.manual_trainer.train_single_step()
+             st.session_state.manual_logs.append(metrics)
+             st.session_state.last_manual_metrics = metrics # Store for display
+
+        # Display Metrics & Text (from last step)
+        if "last_manual_metrics" in st.session_state:
+             metrics = st.session_state.last_manual_metrics
+             
+             # Show metrics for THIS step
+             m1, m2, m3 = st.columns(3)
+             m1.metric("Step Loss", f"{metrics['loss']:.4f}")
+             m2.metric("Running Loss", f"{metrics['running_loss']:.4f}")
+             m3.metric("Gradient Norm", f"{metrics['grad_norm']:.4f}")
+             
+             # Show what the model is actually reading
+             if "inputs" in metrics and "targets" in metrics and "manual_tokenizer" in st.session_state:
+                 # Get batch size from data
+                 current_bs = metrics["inputs"].shape[0]
+                 n_ctx = metrics["inputs"].shape[1]
+                 
+                 # Allow user to pick which sample in the batch to view
+                 sample_idx = st.slider(
+                     "Inspect Batch Sample", 
+                     min_value=1, 
+                     max_value=current_bs, 
+                     value=1,
+                     help="Select which sequence from the current batch to inspect."
+                 ) - 1 # Convert 1-based UI to 0-based index
+                 
+                 # Decode selected sample
+                 input_ids = metrics["inputs"][sample_idx]
+                 target_ids = metrics["targets"][sample_idx]
+                 
+                 input_text = st.session_state.manual_tokenizer.decode(input_ids.tolist())
+                 
+                 # Format Target: Just show the LAST token (the "next" token for the full sequence)
+                 last_token_id = target_ids[-1].item()
+                 last_token_text = st.session_state.manual_tokenizer.decode([last_token_id])
+                 target_display = f"{last_token_text}"
+                 
+                 st.markdown(f"##### 📖 Current Batch Sample ({sample_idx + 1} of {current_bs})")
+                 st.caption(f"Sequence Length: {n_ctx} tokens (defined by n_ctx)")
+                 
+                 c1, c2 = st.columns([3, 1])
+                 with c1:
+                     st.markdown("**Input (Context)**")
+                     st.markdown(
+                         f'<div style="background-color: #262730; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-family: monospace; font-size: 12px;">{input_text}</div>',
+                         unsafe_allow_html=True
+                     )
+                 with c2:
+                     st.markdown("**Target (Next Token)**")
+                     st.markdown(
+                         f'<div style="background-color: #262730; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-family: monospace; font-size: 12px;">{target_display}</div>',
+                         unsafe_allow_html=True
+                     )
+                     st.caption("The model predicts the next token at every position. Here we show the final target token.")
+                     
+        # Trigger next step if auto-stepping is active
+        if st.session_state.get("auto_stepping", False) and st.session_state.get("manual_initialized", False):
+             time.sleep(0.5) # Delay for readability
+             st.rerun()
+             
+        # Visualize Manual Logs
+        if st.session_state.get("manual_initialized", False) and st.session_state.manual_logs:
+             logs_df = pd.DataFrame(st.session_state.manual_logs)
+             st.line_chart(logs_df[["loss", "grad_norm"]])
+
+    else:
+        with col2:
+            start_training = st.button(
+                "🚀 Start Training", type="primary", use_container_width=True,
+                help="Begin training with current configuration")
+        with col3:
+            stop_training = st.button(
+                "⏹️ Stop Training", use_container_width=True,
+                help="Stop the current training run",
+                disabled=not st.session_state.training_active)
 
     # Configuration summary before starting
     with st.expander("📋 Configuration Summary", expanded=True):

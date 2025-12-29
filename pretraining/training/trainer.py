@@ -253,6 +253,58 @@ class TransformerTrainer:
             # Save loss graph
             self.save_loss_graph()
 
+    def train_single_step(self):
+        """Perform a single training step (one batch) and return metrics.
+        
+        Designed for interactive 'Stepping' in UI.
+        
+        Returns:
+            dict with metrics: 'loss', 'grad_norm'
+        """
+        # Get random batch
+        idx = torch.randint(0, len(self.X_train), (self.args.batch_size,))
+        x_batch = self.X_train[idx].to(self.device)
+        y_batch = self.Y_train[idx].to(self.device)
+
+        # Forward pass
+        model_output = self.model(x_batch)
+        logits, aux_loss = extract_model_output_and_aux_loss(model_output)
+
+        # Compute loss
+        loss = F.cross_entropy(
+            logits.view(-1, logits.size(-1)), y_batch.view(-1)
+        )
+        loss = add_aux_loss_to_main_loss(loss, aux_loss, self.model)
+
+        # Backward pass
+        self.optimizer.zero_grad()
+        loss.backward()
+        
+        # Calculate gradient norm (educational metric)
+        total_norm = 0.0
+        for p in self.model.parameters():
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** 0.5
+        
+        self.optimizer.step()
+        
+        # Update running loss
+        self.running_loss = (
+            self.loss_alpha * self.running_loss
+            + (1 - self.loss_alpha) * loss.item()
+        )
+        
+        return {
+            "loss": loss.item(),
+            "running_loss": self.running_loss,
+            "grad_norm": total_norm,
+            "aux_loss": aux_loss.item() if aux_loss is not None else 0.0,
+            "inputs": x_batch.detach().cpu(), 
+            "targets": y_batch.detach().cpu()
+        }
+
     def save_checkpoint(self, iter_num: int, is_final: bool = False):
         """Save model checkpoint"""
         if not hasattr(self.args, "save_dir"):

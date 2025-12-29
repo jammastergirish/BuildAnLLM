@@ -9,12 +9,16 @@ from pretraining.tokenization.tokenizer import (
 )
 from pretraining.model.model import TransformerModel
 from inference.sampler import TransformerSampler
+from utils import get_device
 import os
 import sys
 from pathlib import Path
 
 import streamlit as st
 import torch
+import plotly.express as px
+import pandas as pd
+import numpy as np
 
 # Add parent directory to path to import from main
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -36,7 +40,7 @@ load_model = st.button("📥 Load Model", type="primary")
 if load_model or st.session_state.current_model is not None:
     if load_model:
         with st.spinner("Loading model..."):
-            device = st.session_state.get_device()
+            device = get_device()
             model, cfg, checkpoint = st.session_state.load_model_from_checkpoint(
                 selected_checkpoint["path"], device
             )
@@ -204,7 +208,7 @@ if load_model or st.session_state.current_model is not None:
                 sampler = TransformerSampler(
                     model=st.session_state.current_model,
                     tokenizer=st.session_state.current_tokenizer,
-                    device=st.session_state.get_device()
+                    device=get_device()
                 )
 
                 generated = sampler.sample(
@@ -214,7 +218,37 @@ if load_model or st.session_state.current_model is not None:
                     top_k=top_k if top_k else None,
                     top_p=top_p if top_p > 0 else None
                 )
+                
+                # Store in session state
+                st.session_state.last_generated_text = generated
+                st.session_state.last_prompt = prompt
 
+            # === INTERNALS VISUALIZATION ===
+            with st.spinner("Analyzing model internals for the generated text..."):
+                # Run a forward pass on the FULL generated text to get diagnostics
+                full_tokens = st.session_state.current_tokenizer.encode_tensor(generated).to(get_device()).unsqueeze(0)
+                
+                with torch.no_grad():
+                    # We only care about the last token prediction essentially, but let's capture the whole sequence
+                    # Note: We need to use the model directly, not the sampler, to get diagnostics
+                    outputs = st.session_state.current_model(
+                        full_tokens, 
+                        return_diagnostics=True
+                    )
+                    # Handle return format (logits, cache, aux, diagnostics)
+                    if isinstance(outputs, tuple):
+                        diagnostics = outputs[-1]
+                    else:
+                        diagnostics = None 
+                    
+                    st.session_state.last_diagnostics = diagnostics
+                    st.session_state.last_full_tokens = full_tokens
+
+        # Display results (persisted)
+        if "last_generated_text" in st.session_state:
+            generated = st.session_state.last_generated_text
+            prompt_used = st.session_state.get("last_prompt", "")
+            
             st.header("4. Generated Text")
             st.text_area(
                 "Output",
@@ -222,8 +256,117 @@ if load_model or st.session_state.current_model is not None:
                 height=300,
                 label_visibility="collapsed"
             )
-
-            # Show prompt separately
-            st.caption(f"Prompt: {prompt}")
+            st.caption(f"Prompt: {prompt_used}")
             st.caption(
-                f"Generated: {len(generated) - len(prompt)} characters")
+                f"Generated: {len(generated) - len(prompt_used)} characters")
+
+            # === INTERNALS VISUALIZATION ===
+            st.header("5. 🧠 Model Internals (Glass Box)")
+            
+            diagnostics = st.session_state.get("last_diagnostics")
+            full_tokens = st.session_state.get("last_full_tokens")
+            
+            if diagnostics:
+                internals_tabs = st.tabs(["🔥 Attention Heatmaps", "🔍 Logit Lens", "📊 Layer Outputs"])
+                
+                # Tab 1: Attention Heatmaps
+                with internals_tabs[0]:
+                    st.markdown("Visualize attention patterns. See which tokens the model focuses on.")
+                    
+                    # Select Layer and Head
+                    col_l, col_h = st.columns(2)
+                    # Use stored config
+                    viz_cfg = st.session_state.current_cfg
+                    with col_l:
+                        layer_idx = st.slider("Select Layer", 0, viz_cfg.n_layers - 1, 0)
+                    with col_h:
+                        head_idx = st.slider("Select Head", 0, viz_cfg.n_heads - 1, 0)
+                    
+                    # Get attention pattern: [batch, heads, seq, seq] -> [seq, seq]
+                    attn_map = diagnostics["attention_patterns"][layer_idx][0, head_idx].cpu().numpy()
+                    
+                    # Convert tokens to string labels
+                    # We might need a better way to decode individual tokens for visualization
+                    # For character tokenizer it's easy, for BPE it's harder to get list of strings
+                    # We'll make a best effort decoding
+                    token_ids = full_tokens[0].cpu().tolist()
+                    token_labels = []
+                    for tid in token_ids:
+                        try:
+                            # Attempt to decode single token
+                            decoded = st.session_state.current_tokenizer.decode([tid])
+                            token_labels.append(f"'{decoded}'")
+                        except:
+                            token_labels.append(f"T{tid}")
+                            
+                    # Create Heatmap
+                    fig = px.imshow(
+                        attn_map,
+                        x=token_labels,
+                        y=token_labels,
+                        labels=dict(x="Key (Source)", y="Query (Destination)", color="Attention"),
+                        title=f"Layer {layer_idx} Head {head_idx} Attention",
+                        color_continuous_scale="Viridis" # Standard readable heatmap
+                    )
+                    fig.update_layout(height=600, width=800)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                # Tab 2: Logit Lens
+                with internals_tabs[1]:
+                    st.markdown("""
+                    **Logit Lens**: What would the model predict if we stopped after this layer? 
+                    We apply the final Unembedding matrix to the output of each intermediate layer.
+                    """)
+                    
+                    # Select a specific position to analyze (default: last token)
+                    pos_idx = st.slider("Select Token Position", 0, len(token_labels)-2, len(token_labels)-2,
+                                      help="Analyze the prediction for the NEXT token at this position")
+                    
+                    target_token = token_labels[pos_idx+1]
+                    st.write(f"Context: ...{' '.join(token_labels[max(0, pos_idx-5):pos_idx+1])}")
+                    st.write(f"**Target (Next Token):** {target_token}")
+                    
+                    # Collect predictions per layer
+                    layer_preds = []
+                    
+                    # Get Unembed matrix
+                    unembed = st.session_state.current_model.unembed
+                    
+                    for l_i, layer_out in enumerate(diagnostics["layer_outputs"]):
+                        # layer_out: [batch, seq, d_model]
+                        # Extract vector for position
+                        vec = layer_out[0, pos_idx, :] # [d_model]
+                        
+                        # Apply LN_f (Approximate - we use the model's final LN)
+                        # accurate logit lens usually applies final LN then unembed
+                        vec_norm = st.session_state.current_model.ln_f(vec.unsqueeze(0).unsqueeze(0)).squeeze()
+                        
+                        # Project to logits: [d_vocab]
+                        if hasattr(unembed, "W_U"): # Manual
+                             logits = vec_norm @ unembed.W_U
+                        else: # Torch
+                             logits = unembed.unembedding(vec_norm)
+                             
+                        # Top k
+                        probs = torch.softmax(logits, dim=-1)
+                        top_vals, top_inds = torch.topk(probs, 5)
+                        
+                        row = {"Layer": l_i}
+                        for k in range(3): # Top 3
+                             tok_str = st.session_state.current_tokenizer.decode([top_inds[k].item()])
+                             prob = top_vals[k].item()
+                             row[f"Rank {k+1}"] = f"'{tok_str}' ({prob:.1%})"
+                        layer_preds.append(row)
+                    
+                    st.table(pd.DataFrame(layer_preds))
+                    
+                # Tab 3: Layer Outputs (Norms)
+                with internals_tabs[2]:
+                    # Visualize norm of residual stream
+                    st.markdown("Visualizing the 'Growth' of the residual stream (L2 Norm)")
+                    norms = []
+                    for l_i, layer_out in enumerate(diagnostics["layer_outputs"]):
+                        norm = layer_out[0].norm(dim=-1).mean().item()
+                        norms.append({"Layer": l_i, "Avg Norm": norm})
+                    
+                    st.line_chart(pd.DataFrame(norms).set_index("Layer"))

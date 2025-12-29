@@ -154,8 +154,9 @@ class TransformerModel(nn.Module):
         residual: Float[Tensor, "batch position d_model"],
         cache: Optional[list[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"],
                                    Float[Tensor, "batch cache_len n_kv_heads d_head"]]]],
-        start_pos: int
-    ) -> Tuple[Float[Tensor, "batch position d_model"], list, list]:
+        start_pos: int,
+        return_diagnostics: bool = False
+    ) -> Tuple[Float[Tensor, "batch position d_model"], list, list, Optional[dict]]:
         """Process input through all transformer blocks.
 
         Iterates through transformer blocks, handling cache management and
@@ -165,35 +166,54 @@ class TransformerModel(nn.Module):
             residual: Input tensor [batch, position, d_model]
             cache: Optional KV cache list (one per layer) for efficient inference
             start_pos: Starting position for RoPE (used with cache)
+            return_diagnostics: If True, returns intermediate states (loss, attention, etc.)
 
         Returns:
-            Tuple of (residual, new_cache_list, aux_losses) where:
+            Tuple of (residual, new_cache_list, aux_losses, diagnostics) where:
             - residual: [batch, position, d_model] - output after all blocks
             - new_cache_list: List of updated KV caches (one per block)
             - aux_losses: List of auxiliary losses from MoE layers
+            - diagnostics: Dictionary containing 'attention_patterns' and 'layer_outputs' if return_diagnostics is True
         """
         new_cache_list = []
         aux_losses = []
+        
+        diagnostics = {
+            "attention_patterns": [],
+            "layer_outputs": []
+        } if return_diagnostics else None
 
         for i, block in enumerate(self.blocks):
             # Get cache for this layer (if provided)
             block_cache = cache[i] if cache is not None else None
+            
             # Forward through block
-            residual, new_cache, aux_loss = block(
-                residual, cache=block_cache, start_pos=start_pos)
+            block_out = block(
+                residual, cache=block_cache, start_pos=start_pos,
+                return_attention_pattern=return_diagnostics)
+            
+            if return_diagnostics:
+                residual, new_cache, aux_loss, attn_pattern = block_out
+                diagnostics["attention_patterns"].append(attn_pattern)
+                # Store pre-final-LN output of each block for Logit Lens
+                diagnostics["layer_outputs"].append(residual.detach()) 
+            else:
+                residual, new_cache, aux_loss = block_out
+                
             # Store updated cache
             new_cache_list.append(new_cache)
             # Collect auxiliary losses (from MoE layers)
             if aux_loss is not None:
                 aux_losses.append(aux_loss)
 
-        return residual, new_cache_list, aux_losses
+        return residual, new_cache_list, aux_losses, diagnostics
 
     def _format_output(
         self,
         logits: Float[Tensor, "batch position d_vocab"],
         cache: Optional[list],
-        aux_loss: Optional[Float[Tensor, ""]]
+        aux_loss: Optional[Float[Tensor, ""]],
+        diagnostics: Optional[dict] = None
     ) -> ForwardReturnType:
         """Format model output based on cache and aux_loss presence.
 
@@ -201,33 +221,43 @@ class TransformerModel(nn.Module):
         - Standard: logits only
         - With cache: (logits, cache)
         - With aux_loss: (logits, aux_loss)
-        - With both: (logits, cache, aux_loss)
+        - With diagnostics: (logits, ..., diagnostics)
 
         Args:
             logits: Model logits [batch, position, d_vocab]
             cache: Optional KV cache list (one per layer)
             aux_loss: Optional auxiliary loss from MoE layers
+            diagnostics: Optional dictionary of intermediate states
 
         Returns:
             Formatted output (logits, tuple, or combination)
         """
+        # Base return tuple parts
+        ret = [logits]
+        
+        # Add cache if present (or if we need it for cache API comp)
         if cache is not None:
-            if aux_loss is not None:
-                return logits, cache, aux_loss
-            else:
-                return logits, cache
-        else:
-            if aux_loss is not None:
-                return logits, aux_loss
-            else:
-                return logits
+            ret.append(cache)
+            
+        # Add aux loss if present or if we have it in diagnostics mode
+        if aux_loss is not None:
+            ret.append(aux_loss)
+            
+        # Add diagnostics if present
+        if diagnostics is not None:
+            ret.append(diagnostics)
+            
+        if len(ret) == 1:
+            return ret[0]
+        return tuple(ret)
 
     def forward(
         self,
         tokens: Int[Tensor, "batch position"],
         cache: Optional[list[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"],
                                    Float[Tensor, "batch cache_len n_kv_heads d_head"]]]] = None,
-        start_pos: int = 0
+        start_pos: int = 0,
+        return_diagnostics: bool = False
     ) -> ForwardReturnType:
         """Forward pass through transformer model.
 
@@ -235,9 +265,10 @@ class TransformerModel(nn.Module):
             tokens: Token IDs [batch, position]
             cache: Optional KV cache list (one per layer) for efficient inference
             start_pos: Starting position for RoPE (used with cache)
+            return_diagnostics: If True, return attention patterns and internal states
 
         Returns:
-            Logits [batch, position, d_vocab] or tuple with cache/aux_loss
+            Logits [batch, position, d_vocab] or tuple with cache/aux_loss/diagnostics
         """
         # tokens: [batch, position]
 
@@ -257,8 +288,8 @@ class TransformerModel(nn.Module):
         # Step 3: Pass through transformer blocks
         # Each block: [batch, position, d_model] -> [batch, position, d_model]
         # Blocks process the sequence through attention and MLP
-        residual, new_cache_list, aux_losses = self._process_blocks(
-            residual, cache, start_pos)
+        residual, new_cache_list, aux_losses, diagnostics = self._process_blocks(
+            residual, cache, start_pos, return_diagnostics)
 
         # Step 4: Aggregate auxiliary losses from all MoE layers
         # If multiple MoE layers exist, sum their load balancing losses
@@ -280,7 +311,7 @@ class TransformerModel(nn.Module):
         # Callers using old API (model(tokens)) should handle tuple return: logits, _ = model(tokens)
         # Or use model(tokens)[0] to get just logits
         cache_to_return = new_cache_list if len(self.blocks) > 0 else None
-        return self._format_output(logits, cache_to_return, total_aux_loss)
+        return self._format_output(logits, cache_to_return, total_aux_loss, diagnostics)
 
 
 # Backward compatibility aliases

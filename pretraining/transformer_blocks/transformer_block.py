@@ -31,7 +31,7 @@ Architecture:
 from torch import nn
 from jaxtyping import Float
 from torch import Tensor
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from pretraining.attention.attention import Attention
 from pretraining.mlp.mlp import create_mlp_layer
 from pretraining.normalization.layernorm import create_norm_layer
@@ -80,8 +80,12 @@ class TransformerBlock(nn.Module):
         self,
         residual: Float[Tensor, "batch posn d_model"],
         cache: Optional[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"], Float[Tensor, "batch cache_len n_kv_heads d_head"]]],
-        start_pos: int
-    ) -> tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]]]:
+        start_pos: int,
+        return_attention_pattern: bool = False
+    ) -> Union[
+        tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]]],
+        tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]], Float[Tensor, "batch n_heads posn_q posn_k"]]
+    ]:
         """Apply attention sub-block with pre-norm and residual connection.
 
         Formula: output = input + Attention(LN(input))
@@ -92,18 +96,27 @@ class TransformerBlock(nn.Module):
             residual: Input tensor [batch, posn, d_model]
             cache: Optional KV cache tuple for efficient inference
             start_pos: Starting position for RoPE (used with cache)
+            return_attention_pattern: If True, return attention weights
 
         Returns:
-            Tuple of (residual, cache) where:
-            - residual: [batch, posn, d_model] - output after attention + residual
-            - cache: Updated KV cache tuple
+            Tuple of (residual, cache) or (residual, cache, attn_pattern)
         """
         # Pre-norm: normalize before attention
-        attn_output, new_cache = self.attn(
-            self.ln1(residual), cache=cache, start_pos=start_pos
+        attn_out = self.attn(
+            self.ln1(residual), cache=cache, start_pos=start_pos,
+            return_attention_pattern=return_attention_pattern
         )
+        
+        if return_attention_pattern:
+            attn_output, new_cache, attn_pattern = attn_out
+        else:
+            attn_output, new_cache = attn_out
+            
         # Residual connection: add input to output
         residual = residual + attn_output
+        
+        if return_attention_pattern:
+            return residual, new_cache, attn_pattern
         return residual, new_cache
 
     def _apply_mlp_with_residual(
@@ -138,31 +151,40 @@ class TransformerBlock(nn.Module):
         residual: Float[Tensor, "batch posn d_model"],
         cache: Optional[tuple[Float[Tensor, "batch cache_len n_kv_heads d_head"],
                               Float[Tensor, "batch cache_len n_kv_heads d_head"]]] = None,
-        start_pos: int = 0
-    ) -> Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]], Optional[Float[Tensor, ""]]]:
+        start_pos: int = 0,
+        return_attention_pattern: bool = False
+    ) -> Union[
+        Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]], Optional[Float[Tensor, ""]]],
+        Tuple[Float[Tensor, "batch posn d_model"], tuple[Float[Tensor, "batch new_cache_len n_kv_heads d_head"], Float[Tensor, "batch new_cache_len n_kv_heads d_head"]], Optional[Float[Tensor, ""]], Float[Tensor, "batch n_heads posn_q posn_k"]]
+    ]:
         """Forward pass through transformer block.
 
         Args:
             residual: Input tensor [batch, posn, d_model]
             cache: Optional KV cache tuple for efficient inference
             start_pos: Starting position for RoPE (used with cache)
+            return_attention_pattern: If True, return attention weights
 
         Returns:
-            Tuple of (output, (K_cache, V_cache), aux_loss) where:
-            - output: [batch, posn, d_model] - block output
-            - K_cache, V_cache: Updated KV cache
-            - aux_loss: MoE auxiliary loss (None if not MoE)
+            Tuple of (output, (K_cache, V_cache), aux_loss) or (output, (K_cache, V_cache), aux_loss, attn_pattern)
         """
         # Step 1: Pre-norm attention with residual connection
         # Formula: output = input + Attention(LN(input))
-        residual, new_cache = self._apply_attention_with_residual(
-            residual, cache, start_pos
+        attn_out = self._apply_attention_with_residual(
+            residual, cache, start_pos, return_attention_pattern
         )
+        
+        if return_attention_pattern:
+            residual, new_cache, attn_pattern = attn_out
+        else:
+            residual, new_cache = attn_out
 
         # Step 2: Pre-norm MLP with residual connection
         # Formula: output = input + MLP(LN(input))
         residual, aux_loss = self._apply_mlp_with_residual(residual)
 
+        if return_attention_pattern:
+            return residual, new_cache, aux_loss, attn_pattern
         return residual, new_cache, aux_loss
 
 
