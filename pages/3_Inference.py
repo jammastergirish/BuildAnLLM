@@ -231,9 +231,10 @@ if load_model or st.session_state.current_model is not None:
                 st.session_state.last_prompt = prompt
 
             # === INTERNALS VISUALIZATION ===
-            with st.spinner("Analyzing model internals for the generated text..."):
-                # Run a forward pass on the FULL generated text to get diagnostics
-                full_tokens = st.session_state.current_tokenizer.encode_tensor(generated).to(get_device()).unsqueeze(0)
+            with st.spinner("Analyzing model internals for the input prompt..."):
+                # Run a forward pass on the PROMPT (Input) text to get diagnostics
+                # User requested to see attention on input text, not the generated text
+                full_tokens = st.session_state.current_tokenizer.encode_tensor(prompt).to(get_device()).unsqueeze(0)
                 
                 with torch.no_grad():
                     # We only care about the last token prediction essentially, but let's capture the whole sequence
