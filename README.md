@@ -92,7 +92,7 @@ The app will open in your browser with the following pages:
 6. Click **"Start Training"** to enter the **Interactive Training Mode**:
    - **Glass Box Training**: Watch the model learn step-by-step.
    - **Colored Tokens**: See exactly how the tokenizer splits your input text with color-coded tokens (hover for IDs).
-   - **Real-time Controls**: Unified **Start/Pause/Resume** button and a 👣 **Step Through** button for manual batch stepping.
+   - **Real-time Controls**: **Start/Pause/Resume** and ⏭️ **Step to Next Batch** buttons for manual stepping.
    - **Live Metrics**: Monitor Loss, Gradient Norms, and Validation performance in real-time.
 
 #### Command-line

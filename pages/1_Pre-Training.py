@@ -397,7 +397,7 @@ with st.container():
 
     with col3:
          # Step Button (Renamed)
-         step_btn = st.button("👣 Step Through", width='stretch', 
+         step_btn = st.button("⏭️ Step to Next Batch", width='stretch', 
                              disabled=not st.session_state.get("manual_initialized", False),
                              key="btn_manual_step")
     
