@@ -539,6 +539,30 @@ with st.container():
              last_token_text = st.session_state.manual_tokenizer.decode([last_token_id])
              target_display = f"{last_token_text}"
              
+             # === ATTENTION HEATMAPS & LOGIT LENS ===
+             # Calculate diagnostics FIRST so we can use them in the UI below
+             diagnostics = None
+             logits = None
+             
+             with st.spinner("Calculating attention patterns..."):
+                 # We need to run a forward pass on this specific sample to get diagnostics
+                 # input_ids is [seq_len], need to unsqueeze to [1, seq_len]
+                 sample_tokens = input_ids.unsqueeze(0).to(get_device())
+                 
+                 # Use the manual trainer's model
+                 model = st.session_state.manual_trainer.model
+                 
+                 with torch.no_grad():
+                     outputs = model(sample_tokens, return_diagnostics=True)
+                     # outputs structure depends on model config, but logits is always first
+                     if isinstance(outputs, tuple):
+                         logits = outputs[0]
+                         diagnostics = outputs[-1]
+                     else:
+                         # Should normally be a tuple if diagnostics requested, but handle edge case
+                         logits = outputs
+                         diagnostics = None
+             
              st.markdown(f"##### 📖 Current Batch Sample ({sample_idx + 1} of {current_bs})")
              st.caption(f"Sequence Length: {n_ctx} tokens (defined by n_ctx)")
              
@@ -555,53 +579,81 @@ with st.container():
                      f'<div style="background-color: #262730; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-family: monospace; font-size: 14px; border: 1px solid #4CAF50;">{target_display}</div>',
                      unsafe_allow_html=True
                  )
-                 st.caption("The model predicts the next token at every position. Here we show the final target token.")
-
-             # === ATTENTION HEATMAPS ===
-             with st.spinner("Calculating attention patterns..."):
-                 # We need to run a forward pass on this specific sample to get diagnostics
-                 # input_ids is [seq_len], need to unsqueeze to [1, seq_len]
-                 sample_tokens = input_ids.unsqueeze(0).to(get_device())
                  
-                 # Use the manual trainer's model
-                 model = st.session_state.manual_trainer.model
-                 
-                 with torch.no_grad():
-                     outputs = model(sample_tokens, return_diagnostics=True)
-                     if isinstance(outputs, tuple):
-                         diagnostics = outputs[-1]
-                     else:
-                         diagnostics = None
-                         
-                 if diagnostics and "attention_patterns" in diagnostics:
+                 # --- LOGIT LENS UI ---
+                 if logits is not None:
+                     # Get predictions for the last position
+                     next_token_logits = logits[0, -1, :]
+                     probs = torch.softmax(next_token_logits, dim=-1)
+                     
+                     # Get Top-5
+                     top_k = 5
+                     top_probs, top_indices = torch.topk(probs, k=top_k)
+                     
+                     # Get Actual Target Rank
+                     target_id = last_token_id
+                     target_prob = probs[target_id].item()
+                     target_rank = (probs > target_prob).sum().item() + 1
+                     
                      st.divider()
-                     st.markdown("### 🔥 Attention Heatmaps")
-                     st.caption("Visualize how the model attends to different tokens in this sample.")
-                     
-                     # Select Layer and Head
-                     col_l, col_h = st.columns(2)
-                     cfg = model.cfg
-                     with col_l:
-                         layer_idx = st.slider("Select Layer", 0, cfg.n_layers - 1, 0, key=f"attn_layer_{current_step}")
-                     with col_h:
-                         head_idx = st.slider("Select Head", 0, cfg.n_heads - 1, 0, key=f"attn_head_{current_step}")
-                     
-                     # Get attention pattern
-                     attn_map = diagnostics["attention_patterns"][layer_idx][0, head_idx].cpu().numpy()
-                     
-                     # Labels (we already have token texts from above loop, but let's reconstruct clean list)
-                     token_labels = []
-                     for tid in input_ids_list:
-                         try:
-                             decoded = st.session_state.manual_tokenizer.decode([tid])
-                             # Escape for display if needed, but for plot labels usually raw is fine unless it breaks stuff
-                             token_labels.append(f"'{decoded}'")
-                         except:
-                             token_labels.append(f"T{tid}")
-                             
-                     
-                     # Render heatmap using shared component
-                     render_attention_heatmap(attn_map, token_labels, layer_idx, head_idx)
+                     # Display Rank and Prob ABOVE the explanation
+                     st.markdown(f"**Actual Rank**: #{target_rank}")
+                     st.markdown(f"**Prob**: {target_prob:.2%}")
+
+                 st.caption("The model predicts the next token at every position. Here we show the final target token.")
+                 
+                 if logits is not None:
+                     st.markdown("**Top 5 Predictions:**")
+                     for i in range(top_k):
+                         idx = top_indices[i].item()
+                         prob = top_probs[i].item()
+                         token_text = st.session_state.manual_tokenizer.decode([idx])
+                         safe_token = html.escape(f"'{token_text}'")
+                         
+                         bar_color = "#4CAF50" if idx == target_id else "#262730"
+                         st.markdown(
+                             f"""
+                             <div style="font-size: 12px; margin-bottom: 4px;">
+                                 <div style="display: flex; justify-content: space-between;">
+                                     <code>{safe_token}</code>
+                                     <span>{prob:.2%}</span>
+                                 </div>
+                                 <div style="background-color: #444; height: 4px; border-radius: 2px; width: 100%;">
+                                     <div style="background-color: {bar_color}; width: {prob*100}%; height: 100%; border-radius: 2px;"></div>
+                                 </div>
+                             </div>
+                             """,
+                             unsafe_allow_html=True
+                         )
+
+             # === ATTENTION HEATMAPS (Full Width) ===
+             if diagnostics and "attention_patterns" in diagnostics:
+                 st.divider()
+                 st.markdown("### 🔥 Attention Heatmaps")
+                 st.caption("Visualize how the model attends to different tokens in this sample.")
+                 
+                 # Select Layer and Head
+                 col_l, col_h = st.columns(2)
+                 cfg = model.cfg
+                 with col_l:
+                     layer_idx = st.slider("Select Layer", 0, cfg.n_layers - 1, 0, key=f"attn_layer_{current_step}")
+                 with col_h:
+                     head_idx = st.slider("Select Head", 0, cfg.n_heads - 1, 0, key=f"attn_head_{current_step}")
+                 
+                 # Get attention pattern
+                 attn_map = diagnostics["attention_patterns"][layer_idx][0, head_idx].cpu().numpy()
+                 
+                 # Labels
+                 token_labels = []
+                 for tid in input_ids_list:
+                     try:
+                         decoded = st.session_state.manual_tokenizer.decode([tid])
+                         token_labels.append(f"'{decoded}'")
+                     except:
+                         token_labels.append(f"T{tid}")
+                 
+                 render_attention_heatmap(attn_map, token_labels, layer_idx, head_idx)
+
                  
     # Trigger next step if auto-stepping is active
     if st.session_state.get("auto_stepping", False) and st.session_state.get("manual_initialized", False):
