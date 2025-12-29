@@ -5,6 +5,8 @@ import os
 import threading
 import time
 import pandas as pd
+import plotly.express as px
+import torch
 from datetime import datetime
 
 from config import ModelConfig, Architecture, PositionalEncoding, Normalization, Activation
@@ -532,6 +534,60 @@ with st.container():
                      unsafe_allow_html=True
                  )
                  st.caption("The model predicts the next token at every position. Here we show the final target token.")
+
+             # === ATTENTION HEATMAPS ===
+             with st.spinner("Calculating attention patterns..."):
+                 # We need to run a forward pass on this specific sample to get diagnostics
+                 # input_ids is [seq_len], need to unsqueeze to [1, seq_len]
+                 sample_tokens = input_ids.unsqueeze(0).to(get_device())
+                 
+                 # Use the manual trainer's model
+                 model = st.session_state.manual_trainer.model
+                 
+                 with torch.no_grad():
+                     outputs = model(sample_tokens, return_diagnostics=True)
+                     if isinstance(outputs, tuple):
+                         diagnostics = outputs[-1]
+                     else:
+                         diagnostics = None
+                         
+                 if diagnostics and "attention_patterns" in diagnostics:
+                     st.divider()
+                     st.markdown("### 🔥 Attention Heatmaps")
+                     st.caption("Visualize how the model attends to different tokens in this sample.")
+                     
+                     # Select Layer and Head
+                     col_l, col_h = st.columns(2)
+                     cfg = model.cfg
+                     with col_l:
+                         layer_idx = st.slider("Select Layer", 0, cfg.n_layers - 1, 0, key=f"attn_layer_{current_step}")
+                     with col_h:
+                         head_idx = st.slider("Select Head", 0, cfg.n_heads - 1, 0, key=f"attn_head_{current_step}")
+                     
+                     # Get attention pattern
+                     attn_map = diagnostics["attention_patterns"][layer_idx][0, head_idx].cpu().numpy()
+                     
+                     # Labels (we already have token texts from above loop, but let's reconstruct clean list)
+                     token_labels = []
+                     for tid in input_ids_list:
+                         try:
+                             decoded = st.session_state.manual_tokenizer.decode([tid])
+                             # Escape for display if needed, but for plot labels usually raw is fine unless it breaks stuff
+                             token_labels.append(f"'{decoded}'")
+                         except:
+                             token_labels.append(f"T{tid}")
+                             
+                     # Create Heatmap
+                     fig = px.imshow(
+                         attn_map,
+                         x=token_labels,
+                         y=token_labels,
+                         labels=dict(x="Key (Source)", y="Query (Destination)", color="Attention"),
+                         title=f"Layer {layer_idx} Head {head_idx} Attention",
+                         color_continuous_scale="Viridis"
+                     )
+                     fig.update_layout(height=600) # Auto width
+                     st.plotly_chart(fig, use_container_width=True)
                  
     # Trigger next step if auto-stepping is active
     if st.session_state.get("auto_stepping", False) and st.session_state.get("manual_initialized", False):
