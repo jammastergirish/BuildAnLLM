@@ -305,8 +305,9 @@ with st.container():
         st.session_state.manual_initialized = False
         
     with col2:
-        # Renamed to "Start/Reset Training"
-        init_manual = st.button("Start/Reset Training", type="primary", width='stretch')
+        # Renamed to "Start Training" and disabled if already running
+        init_manual = st.button("Start Training", type="primary", width='stretch', 
+                              disabled=st.session_state.get("manual_initialized", False))
         
     # Initialization Logic
     if init_manual:
