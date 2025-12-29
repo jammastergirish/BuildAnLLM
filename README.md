@@ -15,7 +15,7 @@ I built this as I wanted to properly understand LLMs. A great way to learn is to
 
 I'm incredibly grateful to all those from whom I learned and borrowed ideas (see [Resources](#resources)). I hope others find this repository helpful!
 
-_(This repository is a work in progress. Comments, corrections, and pull requests are very welcome. Currently, it serves a decoder-only architecture (like GPT, LLaMA, OLMo) and includes Mixture of Experts (MoE) architectures (like DeepSeek-V2 and Mixtral). It does not include encoder-only models (like BERT) or encoder-decoder models (like T5). It includes pre-training and supervised fine-tuning (SFT), but not yet RLHF or other advanced fine-tuning techniques.)_
+_(Comments, corrections, and pull requests are very welcome. Currently, this repository serves a decoder-only architecture (like GPT, LLaMA, OLMo) and includes Mixture of Experts (MoE) architectures (like DeepSeek-V2 and Mixtral). It does not include encoder-only models (like BERT) or encoder-decoder models (like T5). It includes pre-training and supervised fine-tuning (SFT), but not yet RLHF or other advanced fine-tuning techniques.)_
 
 ## Quickstart ##
 
