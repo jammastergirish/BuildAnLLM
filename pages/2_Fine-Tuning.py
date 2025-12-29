@@ -1,12 +1,12 @@
 """Fine-tuning page for supervised fine-tuning (SFT)."""
 
 import os
-import threading
 import time
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import torch
 
 from pretraining.tokenization.tokenizer import (
     CharacterTokenizer,
@@ -17,30 +17,28 @@ from pretraining.tokenization.tokenizer import (
 from finetuning.data.sft_dataset import SFTDataset
 from finetuning.training.sft_trainer import SFTTrainer
 from finetuning.training.finetuning_args import FinetuningArgs
-from finetuning.training.sft_training_ui import train_sft_model_thread
 from pretraining.training.training_ui import initialize_training_state
 from ui_components import (
     render_checkpoint_selector, render_finetuning_equations, render_finetuning_code_snippets,
-    format_elapsed_time, get_total_training_time, render_training_metrics,
-    render_all_losses_graph, render_eval_losses_graph, render_completed_training_ui,
-    render_active_training_ui, display_training_status
+    format_elapsed_time, render_training_metrics,
+    render_all_losses_graph, render_eval_losses_graph,
+    display_training_status, render_attention_heatmap
 )
 from config import PositionalEncoding
+from utils import get_device
 
 
 def _extend_positional_embeddings(pos_embed_module, new_max_length: int):
     """
     Extend positional embeddings to support longer sequences.
-
+    
     Uses interpolation to extend the embedding matrix. This is a common
     technique for extending pre-trained positional embeddings to longer contexts.
-
+    
     Args:
         pos_embed_module: The positional embedding module (PosEmbedWithEinops or PosEmbedWithoutEinops)
         new_max_length: New maximum sequence length
     """
-    import torch
-
     old_W_pos = pos_embed_module.W_pos  # [old_n_ctx, d_model]
     old_n_ctx, d_model = old_W_pos.shape
 
@@ -89,242 +87,6 @@ def _extend_positional_embeddings(pos_embed_module, new_max_length: int):
     pos_embed_module.W_pos = torch.nn.Parameter(new_W_pos)
     # Update cfg.n_ctx to reflect the new max length
     pos_embed_module.cfg.n_ctx = new_max_length
-
-
-def _start_finetuning_workflow(
-    selected_checkpoint_path,
-    uploaded_csv,
-    batch_size,
-    lr,
-    weight_decay,
-    epochs,
-    max_steps_per_epoch,
-    eval_interval,
-    save_interval,
-    max_length,
-    use_lora,
-    lora_rank,
-    lora_alpha,
-    lora_dropout,
-    lora_target_modules,
-):
-    """Start the fine-tuning workflow."""
-    device = st.session_state.get_device()
-
-    # Load pre-trained model
-    with st.spinner("Loading pre-trained model..."):
-        model, cfg, checkpoint = st.session_state.load_model_from_checkpoint(
-            selected_checkpoint_path, device
-        )
-        model.train()  # Set to training mode
-
-        # Check sequence length compatibility
-        model_max_length = cfg.n_ctx if hasattr(cfg, 'n_ctx') else 256
-        if max_length > model_max_length:
-            # Check if model uses learned positional embeddings (GPT)
-            uses_learned_pos = (
-                hasattr(cfg, 'positional_encoding') and
-                cfg.positional_encoding == PositionalEncoding.LEARNED
-            )
-
-            if uses_learned_pos:
-                # Extend positional embeddings if needed
-                if hasattr(model, 'pos_embed') and model.pos_embed is not None:
-                    _extend_positional_embeddings(model.pos_embed, max_length)
-                    st.info(
-                        f"✅ Extended positional embeddings from {model_max_length} to {max_length} tokens. "
-                        f"Model can now handle sequences up to {max_length} tokens."
-                    )
-                else:
-                    st.error(
-                        f"Model was trained with max sequence length {model_max_length}, "
-                        f"but fine-tuning requested {max_length}. "
-                        f"Please set max_length to {model_max_length} or less."
-                    )
-                    st.stop()
-            else:
-                # RoPE and ALiBi can handle longer sequences, but warn if significantly longer
-                if max_length > model_max_length * 2:
-                    st.warning(
-                        f"⚠️ Model was trained with max sequence length {model_max_length}, "
-                        f"but fine-tuning will use {max_length}. "
-                        f"RoPE/ALiBi can handle longer sequences, but performance may degrade."
-                    )
-                else:
-                    st.info(
-                        f"ℹ️ Model context length: {model_max_length}, Fine-tuning length: {max_length}. "
-                        f"Using {cfg.positional_encoding.value if hasattr(cfg, 'positional_encoding') else 'positional encoding'} which supports variable length sequences."
-                    )
-
-    # Apply LoRA if selected
-    if use_lora:
-        with st.spinner("Applying LoRA adapters..."):
-            from finetuning.peft.lora_utils import convert_model_to_lora, count_lora_parameters
-            model = convert_model_to_lora(
-                model,
-                rank=lora_rank,
-                alpha=lora_alpha,
-                dropout=lora_dropout,
-                target_modules=lora_target_modules,
-            )
-            # Ensure model (including LoRA matrices) is on the correct device
-            # This is important because LoRA matrices might not have been created on the right device
-            model = model.to(device)
-            param_counts = count_lora_parameters(model)
-            st.success(
-                f"✅ LoRA applied! Training {param_counts['lora']:,} LoRA parameters "
-                f"({param_counts['lora']/param_counts['total']*100:.2f}% of total). "
-                f"{param_counts['frozen']:,} base parameters frozen."
-            )
-
-    tokenizer_type = checkpoint.get("tokenizer_type", "character")
-
-    # Create tokenizer (must match pre-trained model)
-    if tokenizer_type == "character":
-        if os.path.exists("training.txt"):
-            with open("training.txt", "r", encoding="utf-8") as f:
-                text = f.read()
-            tokenizer = CharacterTokenizer(text)
-        else:
-            st.error("training.txt not found. Cannot load character tokenizer.")
-            st.stop()
-    elif tokenizer_type == "bpe-simple":
-        if os.path.exists("training.txt"):
-            with open("training.txt", "r", encoding="utf-8") as f:
-                text = f.read()
-            vocab_size = cfg.d_vocab if hasattr(cfg, 'd_vocab') else 1000
-            tokenizer = SimpleBPETokenizer(text, vocab_size=vocab_size)
-        else:
-            st.error(
-                "training.txt not found. Cannot recreate Simple BPE tokenizer.")
-            st.stop()
-    elif tokenizer_type == "bpe-tiktoken" or tokenizer_type == "bpe":
-        tokenizer = BPETokenizer()
-    elif tokenizer_type == "sentencepiece":
-        if os.path.exists("training.txt"):
-            with open("training.txt", "r", encoding="utf-8") as f:
-                text = f.read()
-            vocab_size = cfg.d_vocab if hasattr(cfg, 'd_vocab') else 10000
-            tokenizer = SentencePieceTokenizer(text, vocab_size=vocab_size)
-        else:
-            st.error(
-                "training.txt not found. Cannot recreate SentencePiece tokenizer.")
-            st.stop()
-    else:
-        st.error(f"Tokenizer type {tokenizer_type} not supported.")
-        st.stop()
-
-    # Save CSV temporarily (use default if no upload)
-    csv_path = "temp_sft_data.csv"
-    if uploaded_csv:
-        with open(csv_path, "wb") as f:
-            f.write(uploaded_csv.getbuffer())
-        df = pd.read_csv(csv_path)
-        st.info(f"Loaded CSV with {len(df)} rows.")
-    elif os.path.exists("finetuning.csv"):
-        # Use default file
-        import shutil
-        shutil.copy("finetuning.csv", csv_path)
-        df = pd.read_csv(csv_path)
-        st.info(f"Using default finetuning.csv with {len(df)} rows.")
-    else:
-        st.error("No CSV file provided and finetuning.csv not found.")
-        st.stop()
-
-    # Create SFT dataset
-    with st.spinner("Creating fine-tuning dataset..."):
-        dataset = SFTDataset(
-            csv_path=csv_path,
-            tokenizer=tokenizer,
-            max_length=max_length,
-        )
-        dataset.print_info()
-
-    X_train, Y_train, masks_train = dataset.get_train_data()
-    X_val, Y_val, masks_val = dataset.get_val_data()
-
-    # Create save directory: checkpoints/{timestamp}/sft/
-    checkpoint_dir = Path(selected_checkpoint_path).parent
-    timestamp = checkpoint_dir.name
-    sft_dir = checkpoint_dir / "sft"
-    sft_dir.mkdir(exist_ok=True)
-
-    # Training args
-    training_args = FinetuningArgs(
-        batch_size=batch_size,
-        epochs=epochs,
-        max_steps_per_epoch=max_steps_per_epoch,
-        lr=lr,
-        weight_decay=weight_decay,
-        save_dir=str(sft_dir),
-        save_interval=save_interval,
-        eval_iters=50,
-        use_lora=use_lora,
-        lora_rank=lora_rank if use_lora else 8,
-        lora_alpha=lora_alpha if use_lora else 8.0,
-        lora_dropout=lora_dropout if use_lora else 0.0,
-        lora_target_modules=lora_target_modules if use_lora else "all",
-    )
-
-    # Create trainer
-    trainer = SFTTrainer(
-        model=model,
-        args=training_args,
-        X_train=X_train,
-        Y_train=Y_train,
-        masks_train=masks_train,
-        X_val=X_val,
-        Y_val=Y_val,
-        masks_val=masks_val,
-        device=device,
-        eval_interval=eval_interval,
-        tokenizer_type=tokenizer_type,
-    )
-
-    # Initialize training state
-    st.session_state.shared_loss_data = {
-        "iterations": [], "train_losses": [], "val_losses": []
-    }
-    st.session_state.shared_training_logs.clear()
-    st.session_state.training_active = True
-    st.session_state.trainer = trainer
-    st.session_state.training_start_time = time.time()
-
-    training_active_flag = [True]
-    progress_data = {
-        "iter": 0,
-        "loss": 0.0,
-        "running_loss": 0.0,
-        "val_loss": None,
-        "progress": 0.0,
-        "all_losses": {
-            "iterations": [],
-            "current_losses": [],
-            "running_losses": []
-        }
-    }
-
-    # Start training thread
-    thread = threading.Thread(
-        target=train_sft_model_thread,
-        args=(
-            trainer,
-            st.session_state.shared_loss_data,
-            st.session_state.shared_training_logs,
-            training_active_flag,
-            st.session_state.training_lock,
-            progress_data
-        ),
-        daemon=True
-    )
-    thread.start()
-    st.session_state.training_thread = thread
-    st.session_state.training_active_flag = training_active_flag
-    st.session_state.progress_data = progress_data
-
-    st.success("Fine-tuning started! Check the visualization below.")
-    time.sleep(0.5)
-    st.rerun()
 
 
 def _render_quick_stats(batch_size, lr, epochs, max_length, use_lora, lora_rank=None):
@@ -475,7 +237,7 @@ with st.container():
         col1, col2 = st.columns(2)
         with col1:
             eval_interval = st.number_input(
-                "Evaluation Interval", min_value=100, max_value=2000, value=500,
+                "Evaluation Interval", min_value=10, max_value=2000, value=50,
                 help="Evaluate every N iterations")
         with col2:
             save_interval = st.number_input(
@@ -483,7 +245,7 @@ with st.container():
                 help="Save checkpoint every N iterations")
 
     max_steps_per_epoch = st.number_input(
-        "Max Steps per Epoch", min_value=100, max_value=5000, value=1000,
+        "Max Steps per Epoch", min_value=10, max_value=5000, value=200,
         help="Maximum number of training steps per epoch")
 
     max_length = st.number_input(
@@ -514,74 +276,339 @@ with st.container():
 with st.container():
     st.markdown("### 🚀 6. Start Fine-Tuning")
 
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+    col1, col2, col3, col4 = st.columns([1.5, 1, 1, 1.5])
+    
+    # Initialize session if needed
+    if "sft_trainer" not in st.session_state:
+        st.session_state.sft_initialized = False
+        
+    # Unified Control Logic
+    is_initialized = st.session_state.get("sft_initialized", False)
+    is_auto_stepping = st.session_state.get("sft_auto_stepping", False)
+    
+    # Dynamic Label
+    if not is_initialized:
+        btn_label = "▶️ Start Fine-Tuning"
+        btn_type = "primary"
+    elif is_auto_stepping:
+        btn_label = "⏸️ Pause"
+        btn_type = "secondary"
+    else:
+        btn_label = "▶️ Resume"
+        btn_type = "primary"
+        
+    def toggle_run_state():
+        if st.session_state.get("sft_initialized", False):
+            st.session_state.sft_auto_stepping = not st.session_state.sft_auto_stepping
 
     with col2:
-        start_finetuning = st.button("🚀 Start Fine-Tuning", type="primary", width='stretch',
-                                     help="Begin fine-tuning with current configuration")
-    with col3:
-        stop_training = st.button("⏹️ Stop Fine-Tuning", width='stretch',
-                                  help="Stop the current fine-tuning run",
-                                  disabled=not st.session_state.training_active)
-
-    # Configuration summary before starting
-    with st.expander("📋 Configuration Summary", expanded=True):
-        config_summary = {
-            "Checkpoint": selected_checkpoint["path"] if selected_checkpoint else "None",
-            "Method": "LoRA" if use_lora else "Full Parameter",
-            "Hyperparameters": {
-                "batch_size": batch_size,
-                "learning_rate": learning_rate,
-                "weight_decay": weight_decay,
-                "epochs": epochs,
-                "max_steps_per_epoch": max_steps_per_epoch,
-                "max_length": max_length,
-                "eval_interval": eval_interval,
-                "save_interval": save_interval
-            }
-        }
-        if use_lora:
-            config_summary["LoRA"] = {
-                "rank": lora_rank,
-                "alpha": lora_alpha,
-                "dropout": lora_dropout,
-                "target_modules": lora_target_modules
-            }
-        st.json(config_summary)
-    st.divider()
-
-if stop_training and st.session_state.training_active:
-    with st.session_state.training_lock:
-        if "training_active_flag" in st.session_state:
-            st.session_state.training_active_flag[0] = False
-    if "training_start_time" in st.session_state and "training_end_time" not in st.session_state:
-        st.session_state.training_end_time = time.time()
-    st.session_state.training_active = False
-    st.rerun()
-
-if start_finetuning:
-    if not uploaded_csv and not os.path.exists("finetuning.csv"):
-        st.error("Please upload a CSV file or ensure finetuning.csv exists.")
-    elif st.session_state.training_active:
-        st.warning("Training is already in progress!")
-    else:
-        _start_finetuning_workflow(
-            selected_checkpoint["path"],
-            uploaded_csv,
-            batch_size,
-            learning_rate,
-            weight_decay,
-            epochs,
-            max_steps_per_epoch,
-            eval_interval,
-            save_interval,
-            max_length,
-            use_lora,
-            lora_rank,
-            lora_alpha,
-            lora_dropout,
-            lora_target_modules,
+        # Unified Button
+        unified_btn = st.button(
+            btn_label, 
+            type=btn_type, 
+            width='stretch',
+            on_click=toggle_run_state if is_initialized else None,
+            key="btn_sft_unified_control"
         )
+        
+    # Initialization Logic
+    if unified_btn and not is_initialized:
+         if not uploaded_csv and not os.path.exists("finetuning.csv"):
+             st.error("Please upload a CSV file or ensure finetuning.csv exists.")
+         elif not selected_checkpoint:
+             st.error("Please select a pre-trained checkpoint.")
+         else:
+             with st.spinner("Initializing Fine-Tuning State..."):
+                 device = get_device()
+                 
+                 # 1. Load Model
+                 model, cfg, checkpoint = st.session_state.load_model_from_checkpoint(
+                     selected_checkpoint["path"], device
+                 )
+                 model.train()
+                 
+                 # 2. Check Sequence Length
+                 model_max_length = cfg.n_ctx if hasattr(cfg, 'n_ctx') else 256
+                 if max_length > model_max_length:
+                     uses_learned_pos = (
+                         hasattr(cfg, 'positional_encoding') and
+                         cfg.positional_encoding == PositionalEncoding.LEARNED
+                     )
+                     if uses_learned_pos:
+                         if hasattr(model, 'pos_embed') and model.pos_embed is not None:
+                             _extend_positional_embeddings(model.pos_embed, max_length)
+                             st.toast(f"Extended pos embeddings to {max_length}", icon="📏")
+                         else:
+                             st.error(f"Cannot extend pos embeddings. Max length {model_max_length}")
+                             st.stop()
+                 
+                 # 3. Apply LoRA
+                 if use_lora:
+                     from finetuning.peft.lora_utils import convert_model_to_lora
+                     model = convert_model_to_lora(
+                         model, rank=lora_rank, alpha=lora_alpha, 
+                         dropout=lora_dropout, target_modules=lora_target_modules
+                     )
+                     model = model.to(device)
+                 
+                 # 4. Tokenizer
+                 tokenizer_type = checkpoint.get("tokenizer_type", "character")
+                 if tokenizer_type == "character":
+                    if os.path.exists("training.txt"):
+                        with open("training.txt", "r", encoding="utf-8") as f:
+                            text = f.read()
+                        tokenizer = CharacterTokenizer(text)
+                    else:
+                        st.error("training.txt needed for char tokenizer.")
+                        st.stop()
+                 elif tokenizer_type == "bpe-simple":
+                    if os.path.exists("training.txt"):
+                        with open("training.txt", "r", encoding="utf-8") as f:
+                            text = f.read()
+                        vocab_size = cfg.d_vocab if hasattr(cfg, 'd_vocab') else 1000
+                        tokenizer = SimpleBPETokenizer(text, vocab_size=vocab_size)
+                    else:
+                        st.error("training.txt needed for simple BPE.")
+                        st.stop()
+                 elif tokenizer_type in ["bpe-tiktoken", "bpe"]:
+                     tokenizer = BPETokenizer()
+                 elif tokenizer_type == "sentencepiece":
+                    if os.path.exists("training.txt"):
+                        with open("training.txt", "r", encoding="utf-8") as f:
+                            text = f.read()
+                        vocab_size = cfg.d_vocab if hasattr(cfg, 'd_vocab') else 10000
+                        tokenizer = SentencePieceTokenizer(text, vocab_size=vocab_size)
+                 else:
+                     st.error(f"Unknown tokenizer: {tokenizer_type}")
+                     st.stop()
+
+                 # 5. Data
+                 csv_path = "temp_sft_data.csv"
+                 if uploaded_csv:
+                     with open(csv_path, "wb") as f:
+                         f.write(uploaded_csv.getbuffer())
+                 else:
+                     import shutil
+                     shutil.copy("finetuning.csv", csv_path)
+                 
+                 dataset = SFTDataset(csv_path=csv_path, tokenizer=tokenizer, max_length=max_length)
+                 X_train, Y_train, masks_train = dataset.get_train_data()
+                 X_val, Y_val, masks_val = dataset.get_val_data()
+                 
+                 # 6. Args
+                 checkpoint_dir = Path(selected_checkpoint["path"]).parent
+                 sft_dir = checkpoint_dir / "sft"
+                 sft_dir.mkdir(exist_ok=True)
+                 
+                 training_args = FinetuningArgs(
+                     batch_size=batch_size, epochs=epochs, max_steps_per_epoch=max_steps_per_epoch,
+                     lr=learning_rate, weight_decay=weight_decay, save_dir=str(sft_dir),
+                     save_interval=save_interval, eval_iters=50, use_lora=use_lora,
+                     lora_rank=lora_rank if use_lora else 8,
+                     lora_alpha=lora_alpha if use_lora else 8.0,
+                     lora_dropout=lora_dropout if use_lora else 0.0,
+                     lora_target_modules=lora_target_modules if use_lora else "all"
+                 )
+                 
+                 # 7. Trainer
+                 st.session_state.sft_trainer = SFTTrainer(
+                     model, training_args, X_train, Y_train, masks_train,
+                     X_val, Y_val, masks_val, device, eval_interval=eval_interval,
+                     tokenizer_type=tokenizer_type
+                 )
+                 st.session_state.sft_tokenizer = tokenizer
+                 st.session_state.sft_initialized = True
+                 st.session_state.sft_logs = []
+                 st.session_state.sft_auto_stepping = True
+                 st.session_state.sft_start_time = time.time()
+                 st.session_state.sft_shared_loss_data = {
+                     "iterations": [], "train_losses": [], "val_losses": []
+                 }
+                 
+                 st.success("Fine-Tuning Started!")
+                 st.rerun()
+
+    # Step Progress Logic
+    if st.session_state.get("sft_initialized", False) and "sft_logs" in st.session_state:
+        current_step = len(st.session_state.sft_logs)
+        total_steps = st.session_state.sft_trainer.max_iters
+        progress = min(current_step / total_steps, 1.0)
+        st.progress(progress, text=f"Progress: Batch {current_step} / {total_steps}")
+    
+    # Ensure auto_stepping is initialized
+    if "sft_auto_stepping" not in st.session_state:
+        st.session_state.sft_auto_stepping = False
+    
+    is_auto_stepping = st.session_state.sft_auto_stepping
+    
+    with col3:
+         step_btn = st.button("⏭️ Step", width='stretch',
+                             disabled=not st.session_state.get("sft_initialized", False),
+                             key="btn_sft_step")
+                             
+    # Logic for performing a step
+    should_step = False
+    if step_btn and st.session_state.get("sft_initialized", False):
+        should_step = True
+    elif is_auto_stepping and st.session_state.get("sft_initialized", False):
+        should_step = True
+        
+    if should_step:
+        # Check if done
+        current_len = len(st.session_state.sft_logs)
+        max_len = st.session_state.sft_trainer.max_iters
+        
+        if current_len >= max_len:
+            st.session_state.sft_auto_stepping = False
+            trainer = st.session_state.sft_trainer
+            trainer.save_checkpoint(max_len, is_final=True)
+            st.success("Fine-tuning Complete! Model saved.")
+        else:
+            trainer = st.session_state.sft_trainer
+            metrics = trainer.train_single_step()
+            st.session_state.sft_logs.append(metrics)
+            st.session_state.last_sft_metrics = metrics
+            
+            # Print to CLI
+            print(f"SFT Iter {len(st.session_state.sft_logs)}: loss {metrics['loss']:.4f}", flush=True)
+            
+            # Evaluate
+            curr_iter = len(st.session_state.sft_logs)
+            if curr_iter % trainer.eval_interval == 0:
+                losses = trainer.estimate_loss()
+                val_loss = losses["val"]
+                print(f"EVAL: step {curr_iter}, val_loss {val_loss:.4f}", flush=True)
+                st.session_state.sft_shared_loss_data["iterations"].append(curr_iter)
+                st.session_state.sft_shared_loss_data["train_losses"].append(metrics["loss"])
+                st.session_state.sft_shared_loss_data["val_losses"].append(val_loss)
+            
+            # Save Checkpoint
+            if hasattr(trainer.args, "save_interval") and curr_iter % trainer.args.save_interval == 0:
+                trainer.save_checkpoint(curr_iter)
+    
+    # Display Metrics & Visuals
+    if "last_sft_metrics" in st.session_state:
+        metrics = st.session_state.last_sft_metrics
+        current_step = len(st.session_state.sft_logs)
+        max_steps = st.session_state.sft_trainer.max_iters
+        progress = min(current_step / max_steps, 1.0)
+        
+        # 1. Metrics
+        latest_val_loss = None
+        if st.session_state.sft_shared_loss_data["val_losses"]:
+            latest_val_loss = st.session_state.sft_shared_loss_data["val_losses"][-1]
+            
+        render_training_metrics(
+            current_iter=current_step,
+            current_loss=metrics["loss"],
+            running_loss=metrics["running_loss"],
+            val_loss=latest_val_loss,
+            progress=progress,
+            max_iters=max_steps
+        )
+        
+        # 2. Graph
+        all_losses_data = {
+            "iterations": list(range(1, current_step + 1)),
+            "current_losses": [m["loss"] for m in st.session_state.sft_logs],
+            "running_losses": [m["running_loss"] for m in st.session_state.sft_logs]
+        }
+        render_all_losses_graph(all_losses_data, training_type="Fine-Tuning Interactive")
+        
+        if st.session_state.sft_shared_loss_data["iterations"]:
+            render_eval_losses_graph(st.session_state.sft_shared_loss_data)
+            
+        # 3. Text Samples
+        if "inputs" in metrics and "targets" in metrics:
+            st.markdown("### 🔍 Inspect Batch")
+            current_bs = metrics["inputs"].shape[0]
+            sample_idx = st.slider("Select Sample", 1, current_bs, 1) - 1
+            
+            input_ids = metrics["inputs"][sample_idx]
+            target_ids = metrics["targets"][sample_idx]
+            masks = metrics["masks"][sample_idx]
+            
+            # Decode with color highlighting for Prompt vs Response (based on mask)
+            # Mask = 0 -> Prompt (ignore loss)
+            # Mask = 1 -> Response (compute loss)
+            # Mask = 0 (after response) -> Padding (ignore loss)
+            
+            tokens_html = ""
+            import html
+            tokenizer = st.session_state.sft_tokenizer
+            
+            # Identify effective sequence length (Prompt + Response, ignoring Padding)
+            try:
+                # Find last index where mask is 1 (end of response)
+                last_response_idx = (masks == 1).nonzero(as_tuple=True)[0][-1].item()
+                # We want to show everything up to this index
+                effective_len = last_response_idx + 1
+            except IndexError:
+                # Fallback
+                effective_len = len(masks)
+            
+            # Slice the data for visualization
+            input_ids_view = input_ids[:effective_len]
+            masks_view = masks[:effective_len]
+            
+            token_labels = [] # For heatmap
+            
+            for i, tid in enumerate(input_ids_view.tolist()):
+                is_response = masks_view[i].item() == 1
+                
+                if is_response:
+                    bg_color = "rgba(78, 205, 196, 0.4)" # Teal
+                    border = "1px solid #4CAF50"
+                    status = "Response"
+                else: # Prompt
+                    bg_color = "rgba(255, 255, 255, 0.1)" # Grey
+                    border = "1px solid #555"
+                    status = "Prompt"
+                
+                token_text = tokenizer.decode([tid])
+                token_labels.append(f"'{token_text}'")
+                safe_token = html.escape(token_text)
+                
+                tokens_html += f'<span style="background-color: {bg_color}; border: {border}; margin: 0 1px; padding: 0 2px;" title="{status} | ID: {tid}">{safe_token}</span>'
+                
+            st.markdown(
+                f'<div style="background-color: #262730; padding: 15px; border-radius: 5px; line-height: 1.8; font-family: monospace;">{tokens_html}</div>', 
+                unsafe_allow_html=True
+            )
+            st.caption("Teal = Response (Target), Grey = Prompt. Padding tokens are hidden.")
+            
+            # Attention Heatmap
+            st.divider()
+            with st.expander("🔥 Attention Heatmaps", expanded=True):
+                 col_l, col_h = st.columns(2)
+                 cfg = st.session_state.sft_trainer.model.cfg
+                 with col_l:
+                     layer_idx = st.slider("Layer", 0, cfg.n_layers - 1, 0, key=f"sft_attn_l_{current_step}")
+                 with col_h:
+                     head_idx = st.slider("Head", 0, cfg.n_heads - 1, 0, key=f"sft_attn_h_{current_step}")
+                 
+                 # Compute diagnostics
+                 with st.spinner("Calculating attention..."):
+                     # Pass full padded sequence to model for correct calculation
+                     sample_tokens = input_ids.unsqueeze(0).to(get_device())
+                     model = st.session_state.sft_trainer.model
+                     with torch.no_grad():
+                         outputs = model(sample_tokens, return_diagnostics=True)
+                         diagnostics = outputs[-1] if isinstance(outputs, tuple) else None
+                 
+                 if diagnostics and "attention_patterns" in diagnostics:
+                     # Slice the attention map to ignore padding
+                     # Pattern shape: [1, n_heads, seq_len, seq_len] -> [seq_len, seq_len] for specific head
+                     full_attn_map = diagnostics["attention_patterns"][layer_idx][0, head_idx].cpu().numpy()
+                     
+                     # Visualize only the non-padded region
+                     attn_map = full_attn_map[:effective_len, :effective_len]
+                     
+                     render_attention_heatmap(attn_map, token_labels, layer_idx, head_idx)
+    
+    # Auto-stepping trigger
+    if st.session_state.get("sft_auto_stepping", False) and st.session_state.get("sft_initialized", False):
+        st.rerun()
 
 # Display training status
 display_training_status(training_type="Fine-Tuning")

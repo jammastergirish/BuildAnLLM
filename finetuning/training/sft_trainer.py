@@ -373,3 +373,57 @@ class SFTTrainer:
         torch.save(checkpoint_data, filepath)
         if not is_final:
             print(f"Checkpoint saved: {filepath}")
+
+    def train_single_step(self):
+        """Perform a single training step (one batch) and return metrics.
+
+        Designed for interactive 'Stepping' in UI.
+
+        Returns:
+            dict with metrics: 'loss', 'running_loss', 'grad_norm', 'inputs', 'targets', 'masks'
+        """
+        # Get random batch
+        idx = torch.randint(0, len(self.X_train), (self.args.batch_size,))
+        x_batch = self.X_train[idx].to(self.device)
+        y_batch = self.Y_train[idx].to(self.device)
+        masks_batch = self.masks_train[idx].to(self.device)
+
+        # Forward pass
+        result = self.model(x_batch)
+        logits = result[0] if isinstance(result, tuple) else result
+
+        # Compute masked loss
+        loss = self._compute_masked_loss(logits, y_batch, masks_batch)
+
+        # Backward pass
+        self.optimizer.zero_grad()
+        loss.backward()
+
+        # Calculate gradient norm
+        total_norm = 0.0
+        # Only check parameters that require grad (handles LoRA correctly)
+        for p in self.model.parameters():
+            if p.requires_grad and p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** 0.5
+
+        self.optimizer.step()
+
+        # Update running loss
+        if self.running_loss == 0.0: # Initialize if 0 (start)
+            self.running_loss = loss.item()
+        else:
+            self.running_loss = (
+                self.loss_alpha * self.running_loss
+                + (1 - self.loss_alpha) * loss.item()
+            )
+
+        return {
+            "loss": loss.item(),
+            "running_loss": self.running_loss,
+            "grad_norm": total_norm,
+            "inputs": x_batch.detach().cpu(),
+            "targets": y_batch.detach().cpu(),
+            "masks": masks_batch.detach().cpu()
+        }
