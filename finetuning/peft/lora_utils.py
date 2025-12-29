@@ -76,7 +76,7 @@ def _patch_attention_forward(attn_module):
     # Check if using einops by checking the class name
     use_einops = 'WithEinops' in attn_module.__class__.__name__
     
-    def lora_forward(self, residual, cache=None, start_pos=0):
+    def lora_forward(self, residual, cache=None, start_pos=0, return_attention_pattern=False, **kwargs):
         """
         Forward pass with LoRA support.
         
@@ -87,11 +87,10 @@ def _patch_attention_forward(attn_module):
             residual: Input tensor [batch, posn, d_model]
             cache: Optional KV cache tuple (K_cache, V_cache) for efficient inference
             start_pos: Starting position for RoPE (used with cache)
+            return_attention_pattern: If True, return attention weights
         
         Returns:
-            Tuple of (output, (K_cache, V_cache)) where:
-            - output: [batch, posn, d_model] - attention output
-            - K_cache, V_cache: [batch, new_cache_len, n_kv_heads, d_head] - updated cache
+            Tuple of (output, (K_cache, V_cache)) or (output, (K_cache, V_cache), attn_pattern)
         """
         seq_len = residual.shape[1]
         
@@ -206,6 +205,8 @@ def _patch_attention_forward(attn_module):
         )
         
         # Return cache: use the original (non-broadcasted) K/V to save memory
+        if return_attention_pattern:
+            return output, (k_for_cache, v_for_cache), attn_pattern
         return output, (k_for_cache, v_for_cache)
     
     # Bind the method to the instance

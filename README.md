@@ -89,10 +89,10 @@ The app will open in your browser with the following pages:
 3. Configure model dimensions (or use size presets: small, medium, full)
 4. Optionally enable MoE (Mixture of Experts) and configure expert settings
 5. Set training hyperparameters (batch size, learning rate, epochs, etc.)
-6. Click **"Start/Reset Training"** to enter the **Interactive Training Mode**:
+6. Click **"Start Training"** to enter the **Interactive Training Mode**:
    - **Glass Box Training**: Watch the model learn step-by-step.
    - **Colored Tokens**: See exactly how the tokenizer splits your input text with color-coded tokens (hover for IDs).
-   - **Real-time Controls**: ⏸️ Pause, 👣 Step manually (one batch at a time), or ▶️ Auto-Step.
+   - **Real-time Controls**: Unified **Start/Pause/Resume** button and a 👣 **Step Through** button for manual batch stepping.
    - **Live Metrics**: Monitor Loss, Gradient Norms, and Validation performance in real-time.
 
 #### Command-line
