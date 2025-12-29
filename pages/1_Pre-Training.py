@@ -393,13 +393,30 @@ with st.container():
         if "last_manual_metrics" in st.session_state:
              metrics = st.session_state.last_manual_metrics
              
-             # Show metrics for THIS step
-             m1, m2, m3 = st.columns(3)
-             m1.metric("Step Loss", f"{metrics['loss']:.4f}")
-             m2.metric("Running Loss", f"{metrics['running_loss']:.4f}")
-             m3.metric("Gradient Norm", f"{metrics['grad_norm']:.4f}")
+             # Prepare data for standard UI
+             current_step = len(st.session_state.manual_logs)
+             max_steps = st.session_state.manual_trainer.max_iters
+             progress = min(current_step / max_steps, 1.0)
              
-             # Show what the model is actually reading
+             # 1. Render Standard Metrics
+             render_training_metrics(
+                 current_iter=current_step,
+                 current_loss=metrics["loss"],
+                 running_loss=metrics["running_loss"],
+                 val_loss=None, # Val loss not computed in manual steps
+                 progress=progress,
+                 max_iters=max_steps
+             )
+             
+             # 2. Render Standard Graph
+             all_losses_data = {
+                 "iterations": list(range(1, current_step + 1)),
+                 "current_losses": [m["loss"] for m in st.session_state.manual_logs],
+                 "running_losses": [m["running_loss"] for m in st.session_state.manual_logs]
+             }
+             render_all_losses_graph(all_losses_data, training_type="Manual Training")
+             
+             # 3. Render Text Samples (Keep existing)
              if "inputs" in metrics and "targets" in metrics and "manual_tokenizer" in st.session_state:
                  # Get batch size from data
                  current_bs = metrics["inputs"].shape[0]
@@ -450,8 +467,25 @@ with st.container():
              
         # Visualize Manual Logs
         if st.session_state.get("manual_initialized", False) and st.session_state.manual_logs:
+             import plotly.graph_objects as go
+             
              logs_df = pd.DataFrame(st.session_state.manual_logs)
-             st.line_chart(logs_df[["loss", "grad_norm"]])
+             iterations = list(range(1, len(logs_df) + 1))
+             
+             fig_grad = go.Figure()
+             fig_grad.add_trace(go.Scatter(
+                 x=iterations, y=logs_df["grad_norm"],
+                 mode="lines", name="Gradient Norm",
+                 line={"color": "#FF4B4B", "width": 2}
+             ))
+             
+             fig_grad.update_layout(
+                 title="Gradient Norm (Training Stability)",
+                 xaxis_title="Step", yaxis_title="Grad Norm",
+                 hovermode="x unified", height=300,
+                 template="plotly_dark" if st.get_option("theme.base") == "dark" else "plotly"
+             )
+             st.plotly_chart(fig_grad, width='stretch')
 
     else:
         with col2:
