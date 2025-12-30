@@ -1445,128 +1445,149 @@ def _get_preset_info() -> str:
 
 
 def generate_graphviz_architecture(config: Dict) -> str:
-    """Generate Graphviz DOT code for transformer architecture."""
+    """Generate Graphviz DOT code for transformer architecture (Vertical, Beige Theme)."""
     n_layers = config.get("n_layers", 4)
     n_heads = config.get("n_heads", 4)
     pos_enc = config.get("positional_encoding", "learned")
     activation = config.get("activation", "gelu")
-
-    # Start building the DOT code
+    
+    # Theme
+    COLOR_BOX_FILL = "#E6DAC3"  # Beige
+    COLOR_BOX_BORDER = "#5C5248" # Dark Brown/Grey
+    COLOR_TEXT = "#4A4A4A"
+    FONT_MAIN = "Helvetica"
+    FONT_MATH = "Times-Roman" 
+    
     dot = []
     dot.append('digraph TransformerArchitecture {')
-    dot.append('    bgcolor="black";')
-    dot.append('    rankdir=BT;')  # Bottom to top like the reference
-    dot.append('    nodesep=0.3;')
-    dot.append('    ranksep=0.8;')
+    dot.append('    bgcolor="transparent";')
+    dot.append('    rankdir=BT;')
+    dot.append('    nodesep=0.5;')
+    dot.append('    ranksep=0.5;')
+    # splines=ortho is good for boxes, but sometimes makes the main line janky. 
+    # splines=line or polyline might be safer for the main vertical, but ortho is requested style.
+    # We will trust 'group' to keep it straight.
+    dot.append('    splines=ortho;') 
+    
+    # Global styles
+    dot.append(f'    node [shape=rect, style="filled,rounded", fillcolor="{COLOR_BOX_FILL}", color="{COLOR_BOX_BORDER}", penwidth=1.5, fontname="{FONT_MAIN}", fontcolor="{COLOR_TEXT}"];')
+    dot.append(f'    edge [color="{COLOR_BOX_BORDER}", penwidth=1.2, arrowsize=0.8];')
+    
+    # Helper for Note Labels
+    def make_note_label(text, subtext=""):
+        return f'''<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="12" FACE="{FONT_MAIN}">{text}</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="14" FACE="{FONT_MATH}"><i>{subtext}</i></FONT></TD></TR>
+        </TABLE>
+        >'''
 
-    # Node styles
-    dot.append(
-        '    node [shape=box, style=filled, fillcolor="#5a5a5a", fontcolor="white", ')
-    dot.append('          fontname="Arial", fontsize=10, height=0.5, width=1.2];')
-    dot.append('    edge [color="#aaaaaa", penwidth=1.5, arrowsize=0.7];')
-    dot.append('')
-
-    # Create nodes
-    dot.append('    // Input/Output nodes')
-    dot.append('    tokens [label="tokens", fillcolor="#4a4a4a"];')
-    dot.append('    embed [label="embed", fillcolor="#6a6a4a"];')
-
-    # Positional embedding node if needed
-    if pos_enc == "learned":
-        dot.append(
-            '    pos_emb [label="Positional Embeddings", fillcolor="#7a7a4a"];')
-
-    dot.append('    logits [label="logits", fillcolor="#4a4a4a"];')
-    dot.append('    unembed [label="unembed", fillcolor="#6a6a4a"];')
-
-    # Create x nodes (residual stream points)
-    dot.append('')
-    dot.append('    // Residual stream points')
-    dot.append('    x0 [shape=plaintext, label="x₀", fontcolor="#cccccc"];')
-    dot.append(
-        '    x1 [shape=plaintext, label="x_{i+1}", fontcolor="#cccccc"];')
-    dot.append(
-        '    x2 [shape=plaintext, label="x_{i+2}", fontcolor="#cccccc"];')
-    dot.append(
-        '    x_final [shape=plaintext, label="x_{-1}", fontcolor="#cccccc"];')
-
-    # Residual block in a cluster
-    dot.append('')
-    dot.append('    // One residual block (repeated)')
-    dot.append('    subgraph cluster_block {')
-    dot.append('        style=dashed;')
-    dot.append('        color="#ffff88";')
-    dot.append('        penwidth=2;')
-    dot.append(f'        label="×{n_layers}";')
-    dot.append('        fontcolor="#ffff88";')
-    dot.append('        fontsize=14;')
-    dot.append('        ')
-
-    # Attention heads
-    n_kv_heads = config.get("n_kv_heads", n_heads)
-    if n_kv_heads == n_heads:
-        heads_label = f"h₀  h₁  ...  h_{n_heads-1}\\n(MHA)"
-    elif n_kv_heads == 1:
-        heads_label = f"h₀  h₁  ...  h_{n_heads-1}\\n(MQA: {n_kv_heads} KV)"
+    # === Pre-calculated Dynamic Labels ===
+    # 1. Heads Label
+    n_kv = config.get("n_kv_heads", n_heads)
+    if n_kv == n_heads:
+        heads_txt = "Attention Heads"
     else:
-        heads_label = f"h₀  h₁  ...  h_{n_heads-1}\\n(GQA: {n_kv_heads} KV)"
+        heads_txt = f"GQA Heads ({n_kv} KV)"
     if pos_enc == "rope":
-        heads_label += "\\n(RoPE)"
+        heads_txt += "\\n(RoPE)"
     elif pos_enc == "alibi":
-        heads_label += "\\n(ALiBi)"
-
-    dot.append(f'        heads [label="{heads_label}", fillcolor="#6a5a5a"];')
-
-    # MLP
-    use_moe = config.get("use_moe", False)
-    mlp_label = "MLP  m"
-    if use_moe:
-        num_experts = config.get("num_experts", 8)
-        num_experts_per_tok = config.get("num_experts_per_tok", 2)
-        mlp_label += f"\\n(MoE: {num_experts} experts,\\ntop-{num_experts_per_tok})"
-        if config.get("use_shared_experts", False):
-            num_shared = config.get("num_shared_experts", 2)
-            mlp_label += f"\\n+ {num_shared} shared"
+        heads_txt += "\\n(ALiBi)"
+        
+    # 2. MLP Label
+    mlp_txt = "MLP m"
+    if config.get("use_moe", False):
+        n_exp = config.get('num_experts', 8)
+        k_exp = config.get('num_experts_per_tok', 2)
+        mlp_txt = f"MoE MLP\\n({n_exp} Experts, top-{k_exp})"
     elif activation == "swiglu":
-        mlp_label += "\\n(SwiGLU)"
-    elif activation == "gelu":
-        mlp_label += "\\n(GELU)"
+        mlp_txt += "\\n(SwiGLU)"
+        
+    # === NODES ===
+    
+    # Input/Output Stages
+    dot.append(f'    tokens [label="tokens", shape=box3d, group=main];')
+    dot.append(f'    embed [label="embed", group=main];')
+    dot.append(f'    note_embed [shape=plaintext, style=none, label={make_note_label("Token embedding.", "x&#8320; = W&#7431;t")}];')
+    
+    dot.append(f'    unembed [label="unembed", group=main];')
+    dot.append(f'    logits [label="logits", group=main];')
+    dot.append(f'    note_unembed [shape=plaintext, style=none, label={make_note_label("Unembedding", "T(t) = W&#7516; x&#8331;&#8321;")}];')
 
-    dot.append(f'        mlp [label="{mlp_label}", fillcolor="#5a6a5a"];')
-    dot.append('    }')
+    # Connections for Input/Output
+    dot.append('    tokens -> embed [weight=100];') # High weight for vertical alignment
+    dot.append('    unembed -> logits [weight=100];') 
+    
+    # Equation Alignment
+    dot.append('    { rank=same; tokens; note_embed; }')
+    dot.append('    { rank=same; unembed; note_unembed; }')
+    dot.append('    embed -> note_embed [style=invis, minlen=2];')
+    dot.append('    unembed -> note_unembed [style=invis, minlen=2];')
 
-    dot.append('')
-    dot.append('    // Connections')
 
-    # Input flow
-    dot.append('    tokens -> embed;')
+    # === CLUSTER (The Residual Block) ===
+    dot.append(f'    subgraph cluster_residual {{')
+    dot.append('        label="One residual block (repeated)";')
+    dot.append('        fontcolor="#888888";')
+    dot.append('        style=dashed;')
+    dot.append('        color="#888888";')
+    dot.append('        margin=20;') # Add breathing room
+    
+    # Nodes INSIDE cluster
+    dot.append(f'        x0 [shape=plaintext, style=none, label=<<i>x</i><sub>0</sub>>, group=main];')
+    dot.append(f'        x1 [shape=plaintext, style=none, label=<<i>x</i><sub>i+1</sub>>, group=main];')
+    dot.append(f'        x2 [shape=plaintext, style=none, label=<<i>x</i><sub>i+2</sub>>, group=main];')
+    
+    dot.append('        plus1 [shape=circle, label="+", fixedsize=true, width=0.4, group=main];')
+    dot.append('        plus2 [shape=circle, label="+", fixedsize=true, width=0.4, group=main];')
+    
+    dot.append(f'        heads [label="{heads_txt}", width=2.5];')
+    dot.append(f'        mlp [label="{mlp_txt}", width=2.5];')
+    
+    # Notes inside cluster or just aligned? 
+    # To be "next to" the block, they don't strictly need to be inside the cluster border, 
+    # but aligning them with nodes inside is tricky if they are outside. 
+    # Let's put them inside for now to ensure alignment works, or keep valid rank=same.
+    dot.append(f'        note_attn [shape=plaintext, style=none, label={make_note_label("Attention Layer", "x&#7522;&#8330;&#8321; = x&#7522; + &Sigma; h(x&#7522;)")}];')
+    dot.append(f'        note_mlp [shape=plaintext, style=none, label={make_note_label("MLP Layer", "x&#7522;&#8330;&#8322; = x&#7522;&#8330;&#8321; + m(x&#7522;&#8330;&#8321;)")}];')
 
-    # Handle positional encoding
-    if pos_enc == "learned":
-        dot.append('    embed -> pos_emb;')
-        dot.append('    pos_emb -> x0;')
-    else:
-        dot.append('    embed -> x0;')
+    # Ranks inside cluster
+    dot.append('        { rank=same; x0; heads; note_attn; }')
+    dot.append('        { rank=same; x1; mlp; note_mlp; }')
 
-    # One block connections
-    dot.append('    x0 -> x1;')
-    dot.append(
-        '    x1 -> heads [dir=both, label="+", fontsize=10, fontcolor="yellow"];')
-    dot.append('    x1 -> x2;')
-    dot.append(
-        '    x2 -> mlp [dir=both, label="+", fontsize=10, fontcolor="yellow"];')
+    # Block Connections
+    # 1. Main Stream (Vertical Spine) - High weight, same group
+    dot.append('        x0 -> plus1 [weight=100];') 
+    dot.append('        plus1 -> x1 [weight=100];')
+    dot.append('        x1 -> plus2 [weight=100];')
+    dot.append('        plus2 -> x2 [weight=100];')
+    
+    # 2. Residual Branches - Constraint=false ensures they don't impact vertical layout ranking
+    # Branch OUT
+    dot.append('        x0 -> heads [constraint=false];')
+    dot.append('        x1 -> mlp [constraint=false];')
+    
+    # Branch IN
+    dot.append('        heads -> plus1;')
+    dot.append('        mlp -> plus2;')
+    
+    # 3. Note alignment
+    dot.append('        heads -> note_attn [style=invis, minlen=1];')
+    dot.append('        mlp -> note_mlp [style=invis, minlen=1];')
 
-    # Repetition indicator
-    dot.append(
-        '    x2 -> x_final [label="...", fontsize=12, fontcolor="#888888"];')
+    dot.append('    }') # End Cluster
 
-    # Output
-    dot.append('    x_final -> unembed;')
-    dot.append('    unembed -> logits;')
+    # === Connecting Cluster to Outer World ===
+    dot.append('    embed -> x0 [weight=100];')
+    
+    # Link to final output
+    dot.append(f'    x_final [shape=plaintext, style=none, label=<<i>x</i><sub>-1</sub>>, group=main];')
+    dot.append('    x2 -> x_final [style=dotted, label="repeat...", weight=100];')
+    dot.append('    x_final -> unembed [weight=100];')
 
     dot.append('}')
+    return "\n".join(dot)
 
-    return '\n'.join(dot)
 
 
 def render_model_architecture_diagram(config: Dict) -> None:
