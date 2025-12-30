@@ -68,6 +68,7 @@ The app will open in your browser with the following pages:
 - **Pre-Training Page**: Configure and pre-train models with a visual interface
 - **Fine-Tuning Page**: Fine-tune pre-trained models on prompt/response pairs
 - **Inference Page**: Generate text from trained models (pre-trained or fine-tuned)
+- **Playground**
 
 ### Pre-Training
 
@@ -77,10 +78,10 @@ The app will open in your browser with the following pages:
 4. Trains for specified epochs with real-time loss visualization
 5. Saves checkpoints to `checkpoints/YYYYMMDDHHMMSS/` (timestamped folders)
 
-#### UI
+#### How To
 
 1. Upload training data or use the default `training.txt` file
-2. Select an architecture preset, or choose custom parameters:
+2. Choose custom parameters or select a preset:
    - **🚀 GPT-2**: Learned positional embeddings, LayerNorm, GELU activation
    - **🦙 LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation
    - **🔬 OLMo**: ALiBi positional encoding, LayerNorm, SwiGLU activation
@@ -96,29 +97,6 @@ The app will open in your browser with the following pages:
    - **Attention Heatmaps**: Visualize how the model attends to different tokens in the sequence (visible when paused).
    - **Live Metrics**: Monitor Loss, Gradient Norms, and Validation performance in real-time.
 
-#### Command-line
-
-You can also train models using the command-line script:
-```bash
-# Train with default settings (GPT, small, einops, character tokenizer)
-uv run cli/train.py
-
-# Train LLaMA model
-uv run cli/train.py --architecture LLAMA
-
-# Train OLMo model
-uv run cli/train.py --architecture OLMO
-
-# Train full-size model
-uv run cli/train.py --model_size full
-
-# Train with BPE tokenizer
-uv run cli/train.py --tokenizer_type bpe
-
-# Train without einops
-uv run cli/train.py --no_einops
-```
-
 ### Inference
 
 **Options**:
@@ -131,7 +109,7 @@ uv run cli/train.py --no_einops
 - `--tokenizer_type`: Tokenizer type (optional, auto-detected from checkpoint; only needed for old checkpoints)
 - `--text_file`: Text file for character tokenizer initialization (default: `training.txt`, only needed for character tokenizer)
 
-### UI
+### How To
 
 1. Select a checkpoint from the dropdown (auto-scans `checkpoints/` directory)
    - Shows both pre-trained and fine-tuned checkpoints
@@ -144,13 +122,6 @@ uv run cli/train.py --no_einops
    - **Attention Maps**: Visualize where the model is looking.
    - **Logit Lens**: See what the model "thinks" the next token is after every layer.
    - **Layer Norms**: Track signal propagation through the network.
-
-#### Command-line
-
-```bash
-# Generate text from trained model
-uv run cli/infer.py --checkpoint checkpoints/20240101120000/final_model.pt --prompt "First Citizen:"
-```
 
 ---
 
@@ -202,8 +173,6 @@ In the Glass Box view (Pre-Training and Inference), you can see this process hap
 - **Y-axis (Query)**: The token the model is currently *generating* (destination).
 - **Color Intensity**: Darker/Brighter colors indicate stronger focus.
 - **Diagonal Pattern**: A strong diagonal line means the model is mostly looking at the immediate previous token (common in early layers).
-
-![Attention Heatmap Example](assets/attention_heatmap.png)
 
 ### 4. Residual Connections
 
@@ -352,7 +321,6 @@ optimizer.step()
 - `d_mlp`: MLP hidden dimension (typically `4 * d_model`)
 - `n_ctx`: Context length (max sequence length)
 - `d_vocab`: Vocabulary size
-- `architecture`: Architecture type (GPT, LLaMA, or OLMo)
 - **MoE Configuration** (when `use_moe=True`):
   - `num_experts`: Number of expert MLPs (e.g., 8, 64)
   - `num_experts_per_tok`: Top-k experts to activate per token (e.g., 2, 6)
