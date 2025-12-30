@@ -788,7 +788,7 @@ def render_token_analysis_ui(
                  unsafe_allow_html=True
              )
         else:
-             st.markdown(f"**Input (Context)** ({n_ctx} tokens)")
+             st.markdown(f"**Input (Context)**")
              st.markdown(
                  f'<div style="background-color: #262730; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-family: monospace; font-size: 14px; line-height: 1.8;">{colored_html}</div>',
                  unsafe_allow_html=True

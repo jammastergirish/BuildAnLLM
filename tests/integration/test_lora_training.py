@@ -197,7 +197,7 @@ class TestLoraTrainingWorkflow:
         import tempfile
         import pandas as pd
         import os
-        from finetuning.training.sft_training_ui import _sft_training_step
+        from finetuning.training.sft_trainer import SFTTrainer
         
         # Create temporary CSV
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
@@ -238,11 +238,13 @@ class TestLoraTrainingWorkflow:
             )
             
             # Test training step (this is what the UI uses)
-            loss, running_loss = _sft_training_step(trainer, iter_num=0, first_loss_set=False)
-            assert isinstance(loss, torch.Tensor)
+            metrics = trainer.train_single_step()
+            loss = metrics["loss"]
+            running_loss = metrics["running_loss"]
+            
+            assert isinstance(loss, float)
             assert isinstance(running_loss, float)
-            assert loss.device == device
-            assert loss.item() >= 0
+            assert loss >= 0
             assert running_loss >= 0
             
         finally:

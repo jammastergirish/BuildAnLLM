@@ -43,7 +43,7 @@ class TransformerTrainer:
         self.max_iters = args.epochs * args.max_steps_per_epoch
 
         # Track running average of loss
-        self.running_loss = None  # Initialize to None to avoid zero-bias
+        self.running_loss = 0.0  # Initialize to 0.0 for generic thread compatibility
         self.loss_alpha = 0.99  # Exponential moving average
 
         # Track losses for plotting
@@ -294,7 +294,7 @@ class TransformerTrainer:
         self.optimizer.step()
         
         # Update running loss
-        if self.running_loss is None:
+        if self.running_loss == 0.0:
             self.running_loss = loss.item()
         else:
             self.running_loss = (

@@ -110,6 +110,34 @@ class TestTransformerTrainer:
         assert losses['train'] >= 0
         assert losses['val'] >= 0
 
+    def test_train_single_step(self, model_with_einops, training_args, device):
+        """Test single training step."""
+        batch_size, seq_len = 4, 10
+        X_train = torch.randint(
+            0, model_with_einops.cfg.d_vocab, (100, seq_len))
+        Y_train = torch.randint(
+            0, model_with_einops.cfg.d_vocab, (100, seq_len))
+        X_val = torch.randint(0, model_with_einops.cfg.d_vocab, (20, seq_len))
+        Y_val = torch.randint(0, model_with_einops.cfg.d_vocab, (20, seq_len))
+
+        trainer = TransformerTrainer(
+            model=model_with_einops,
+            args=training_args,
+            X_train=X_train,
+            Y_train=Y_train,
+            X_val=X_val,
+            Y_val=Y_val,
+            device=device
+        )
+
+        metrics = trainer.train_single_step()
+        assert isinstance(metrics, dict)
+        assert "loss" in metrics
+        assert "running_loss" in metrics
+        assert "grad_norm" in metrics
+        assert metrics["loss"] >= 0
+        assert metrics["running_loss"] >= 0
+
 
 @pytest.mark.integration
 class TestSFTTrainer:
