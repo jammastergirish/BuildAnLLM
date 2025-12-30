@@ -66,8 +66,14 @@ if load_model or st.session_state.current_model is not None:
                     "training.txt not found. Cannot load character tokenizer.")
                 st.stop()
         elif tokenizer_type == "bpe-simple":
+            # Check if tokenizer model exists in checkpoint directory
+            checkpoint_dir = os.path.dirname(selected_checkpoint["path"])
+            tokenizer_path = os.path.join(checkpoint_dir, "tokenizer.model")
+            
+            if os.path.exists(tokenizer_path):
+                tokenizer = SimpleBPETokenizer(model_path=tokenizer_path)
             # Simple BPE requires original training text to recreate
-            if os.path.exists("training.txt"):
+            elif os.path.exists("training.txt"):
                 with open("training.txt", "r", encoding="utf-8") as f:
                     text = f.read()
                 # Use vocab size from config if available
@@ -75,14 +81,20 @@ if load_model or st.session_state.current_model is not None:
                 tokenizer = SimpleBPETokenizer(text, vocab_size=vocab_size)
             else:
                 st.error(
-                    "training.txt not found. Cannot recreate Simple BPE tokenizer.")
+                    "training.txt not found (and no tokenizer.model in checkpoint). Cannot recreate Simple BPE tokenizer.")
                 st.stop()
         elif tokenizer_type == "bpe-tiktoken" or tokenizer_type == "bpe":
             # Support "bpe" for backward compatibility with old checkpoints
             tokenizer = BPETokenizer()
         elif tokenizer_type == "sentencepiece":
-            # SentencePiece requires original training text to recreate
-            if os.path.exists("training.txt"):
+            # Check if tokenizer model exists in checkpoint directory
+            checkpoint_dir = os.path.dirname(selected_checkpoint["path"])
+            tokenizer_path = os.path.join(checkpoint_dir, "tokenizer.model")
+            
+            if os.path.exists(tokenizer_path):
+                tokenizer = SentencePieceTokenizer(model_path=tokenizer_path)
+            # Fallback: SentencePiece requires original training text to recreate
+            elif os.path.exists("training.txt"):
                 with open("training.txt", "r", encoding="utf-8") as f:
                     text = f.read()
                 # Use vocab size from config if available
@@ -92,7 +104,7 @@ if load_model or st.session_state.current_model is not None:
                     text, vocab_size=vocab_size)
             else:
                 st.error(
-                    "training.txt not found. Cannot recreate SentencePiece tokenizer.")
+                    "training.txt not found (and no tokenizer.model in checkpoint). Cannot recreate SentencePiece tokenizer.")
                 st.stop()
         else:
             st.error(

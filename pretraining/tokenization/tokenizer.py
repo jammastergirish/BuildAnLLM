@@ -74,10 +74,20 @@ class SimpleBPETokenizer:
     6. Repeat until desired vocab size
     """
 
-    def __init__(self, text: str, vocab_size: int = 1000):
-        """Train BPE tokenizer on text"""
+    def __init__(self, text: str = None, vocab_size: int = 1000, model_path: str = None):
+        """Train BPE tokenizer on text or load from file"""
+        if model_path:
+            import json
+            with open(model_path, 'r') as f:
+                data = json.load(f)
+            self.vocab = data['vocab']
+            self.merges = [tuple(m) for m in data['merges']] # Convert lists back to tuples
+            self.id_to_token = {int(k): v for k, v in data['id_to_token'].items()} # JSON keys are strings
+            self.vocab_size = len(self.vocab)
+            return
+
         if not text:
-            raise ValueError("Text cannot be empty for SimpleBPETokenizer")
+            raise ValueError("Text cannot be empty for SimpleBPETokenizer if model_path is None")
         
         # Start with character-level vocabulary
         chars = sorted(list(set(text)))
@@ -193,6 +203,17 @@ class SimpleBPETokenizer:
         """Convert tensor of token IDs back to text"""
         return self.decode(tokens.tolist())
 
+    def save(self, path: str):
+        """Save tokenizer to JSON file"""
+        import json
+        data = {
+            'vocab': self.vocab,
+            'merges': self.merges,
+            'id_to_token': self.id_to_token
+        }
+        with open(path, 'w') as f:
+            json.dump(data, f)
+
 
 class BPETokenizer:
     """Byte Pair Encoding tokenizer using tiktoken"""
@@ -222,39 +243,52 @@ class BPETokenizer:
 class SentencePieceTokenizer:
     """SentencePiece tokenizer"""
 
-    def __init__(self, text: str, vocab_size: int = 1000):
+    def __init__(self, text: str = None, vocab_size: int = 1000, model_path: str = None):
         try:
             import sentencepiece as spm
-            import tempfile
-            import os
-
-            # Train SentencePiece model on the text
-            with tempfile.NamedTemporaryFile(
-                mode="w", delete=False, suffix=".txt"
-            ) as f:
-                f.write(text)
-                temp_file = f.name
-
-            model_prefix = tempfile.mktemp()
-            spm.SentencePieceTrainer.train(
-                input=temp_file,
-                model_prefix=model_prefix,
-                vocab_size=vocab_size,
-                model_type="bpe",
-            )
-
             self.sp = spm.SentencePieceProcessor()
-            self.sp.load(f"{model_prefix}.model")
-            self.vocab_size = self.sp.get_piece_size()
 
-            # Cleanup
-            os.unlink(temp_file)
-            os.unlink(f"{model_prefix}.model")
-            os.unlink(f"{model_prefix}.vocab")
+            if model_path:
+                self.sp.load(model_path)
+                self.vocab_size = self.sp.get_piece_size()
+            else:
+                if not text:
+                    raise ValueError("Text must be provided if model_path is None")
+                
+                import tempfile
+                import os
+
+                # Train SentencePiece model on the text
+                with tempfile.NamedTemporaryFile(
+                    mode="w", delete=False, suffix=".txt"
+                ) as f:
+                    f.write(text)
+                    temp_file = f.name
+
+                model_prefix = tempfile.mktemp()
+                spm.SentencePieceTrainer.train(
+                    input=temp_file,
+                    model_prefix=model_prefix,
+                    vocab_size=vocab_size,
+                    model_type="bpe",
+                )
+
+                self.sp.load(f"{model_prefix}.model")
+                self.vocab_size = self.sp.get_piece_size()
+
+                # Cleanup
+                os.unlink(temp_file)
+                os.unlink(f"{model_prefix}.model")
+                os.unlink(f"{model_prefix}.vocab")
         except ImportError as exc:
             raise ImportError(
                 "sentencepiece not installed. Install with: pip install sentencepiece"
             ) from exc
+
+    def save(self, path: str):
+        """Save tokenizer model to path"""
+        with open(path, 'wb') as f:
+            f.write(self.sp.serialized_model_proto())
 
     def encode(self, text: str) -> List[int]:
         """Convert text to list of token IDs"""

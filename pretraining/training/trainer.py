@@ -21,6 +21,7 @@ class TransformerTrainer:
         eval_interval: int = 500,
         print_interval: int = 100,
         tokenizer_type: str = None,
+        tokenizer=None,
     ):
         self.model = model
         self.args = args
@@ -33,6 +34,7 @@ class TransformerTrainer:
         self.eval_iters = getattr(args, "eval_iters", 200)
         self.print_interval = print_interval
         self.tokenizer_type = tokenizer_type
+        self.tokenizer = tokenizer
 
         # Setup optimizer
         self.optimizer = torch.optim.AdamW(
@@ -348,6 +350,18 @@ class TransformerTrainer:
         )
         if not is_final:
             print(f"Checkpoint saved: {filepath}")
+
+        # Save tokenizer if possible
+        if self.tokenizer and hasattr(self.tokenizer, "save"):
+            # Determine tokenizer filename based on type or generic
+            try:
+                # Basic save logic
+                tokenizer_path = os.path.join(self.args.save_dir, "tokenizer.model")
+                if hasattr(self.tokenizer, "save"):
+                    self.tokenizer.save(tokenizer_path)
+                    print(f"Tokenizer saved to: {tokenizer_path}")
+            except Exception as e:
+                print(f"Warning: Failed to save tokenizer: {e}")
 
     def save_loss_graph(self):
         """Save loss graph to checkpoint directory"""

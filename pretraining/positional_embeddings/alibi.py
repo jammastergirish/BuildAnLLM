@@ -87,14 +87,17 @@ class ALiBi(nn.Module):
         Returns:
             Masked bias matrix [n_heads, seq_len, seq_len]
         """
-        # Lower triangular mask: 1 for j <= i, 0 for j > i
-        # [seq_len, seq_len]
-        mask = torch.tril(torch.ones((seq_len, seq_len), device=device))
-        mask_expanded = mask.unsqueeze(0)  # [1, seq_len, seq_len]
-
-        # Only apply bias to future positions (where mask == 0)
-        # For past/current positions (mask == 1), bias is 0
-        return bias * (1 - mask_expanded)
+        # We want to apply the bias to all positions based on distance.
+        # The causal mask will be applied later in the attention layer to mask out future positions.
+        # So providing bias for future positions (which will be masked) doesn't hurt,
+        # but crucially we MUST provide bias for past positions (which was being zeroed out).
+        
+        # Original incorrect logic: return bias * (1 - mask_expanded)
+        # This zeroed out the valid positions (mask=1) and kept invalid ones (mask=0).
+        
+        # Correct logic: Just return the bias map.
+        # bias[h, i, j] = -slope[h] * |i - j|
+        return bias
 
     def get_bias(self, seq_len: int, device: torch.device) -> Float[Tensor, "n_heads seq_len seq_len"]:
         """

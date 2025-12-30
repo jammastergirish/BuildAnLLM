@@ -232,7 +232,7 @@ with st.container():
              
              st.session_state.manual_trainer = TransformerTrainer(
                  model, training_args, *dataset.get_train_data(), *dataset.get_val_data(), 
-                 device=device, tokenizer_type=tokenizer_type
+                 device=device, tokenizer_type=tokenizer_type, tokenizer=dataset.tokenizer
              )
              st.session_state.manual_tokenizer = dataset.tokenizer # Store for decoding
              st.session_state.manual_initialized = True
