@@ -18,7 +18,7 @@ const spectral = Spectral({
 });
 
 export const metadata = {
-  title: "Transformer Studio",
+  title: "Build an LLM",
   description: "Training and inference dashboard",
 };
 
@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <header className="site-header">
           <div className="brand">
-            Transformer Studio
+            Build an LLM
             <span>Training and inference</span>
           </div>
           <Nav />

@@ -30,7 +30,7 @@ export function useSse<T = unknown>(path?: string, active = true) {
       }
     };
 
-    const eventTypes = ["status", "metrics", "eval", "checkpoint", "done", "error"] as const;
+    const eventTypes = ["status", "metrics", "eval", "checkpoint", "log", "done", "error"] as const;
     eventTypes.forEach((type) => {
       source.addEventListener(type, (event) => handle(event as MessageEvent, type));
     });

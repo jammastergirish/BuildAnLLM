@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CodePanel from "../../components/CodePanel";
 import Heatmap from "../../components/Heatmap";
 import LineChart from "../../components/LineChart";
@@ -10,6 +10,19 @@ import { fetchJson, makeFormData, Checkpoint, CodeSnippet, JobStatus } from "../
 import { useSse } from "../../lib/useSse";
 import MarkdownBlock from "../../components/MarkdownBlock";
 import { finetuneEquations, loraEquations } from "../../lib/equations";
+import { formatDuration } from "../../lib/time";
+
+type MetricsPayload = {
+  loss?: number;
+  running_loss?: number;
+  grad_norm?: number;
+  aux_loss?: number;
+  iter?: number;
+  max_iters?: number;
+  elapsed_time?: number;
+  iter_per_sec?: number;
+  eta_seconds?: number;
+};
 
 export default function FinetunePage() {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
@@ -38,11 +51,12 @@ export default function FinetunePage() {
     save_interval: 500,
   });
   const [job, setJob] = useState<JobStatus | null>(null);
-  const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
-  const [metricsHistory, setMetricsHistory] = useState<Record<string, number>[]>([]);
+  const [metrics, setMetrics] = useState<MetricsPayload | null>(null);
+  const [metricsHistory, setMetricsHistory] = useState<MetricsPayload[]>([]);
   const [evalHistory, setEvalHistory] = useState<Record<string, number>[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [snippets, setSnippets] = useState<CodeSnippet[]>([]);
+  const [snippetsLoading, setSnippetsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inspectSample, setInspectSample] = useState(0);
   const [inspectMaxTokens, setInspectMaxTokens] = useState(128);
@@ -54,6 +68,7 @@ export default function FinetunePage() {
   const [attention, setAttention] = useState<number[][]>([]);
   const [attnLayer, setAttnLayer] = useState(0);
   const [attnHead, setAttnHead] = useState(0);
+  const inspectThrottleRef = useRef(0);
 
   useEffect(() => {
     fetchJson<{ checkpoints: Checkpoint[] }>("/api/checkpoints")
@@ -96,7 +111,7 @@ export default function FinetunePage() {
   );
 
   const ssePath = job ? `/api/finetune/jobs/${job.job_id}/events` : undefined;
-  const { lastEvent } = useSse(ssePath, Boolean(job));
+  const { lastEvent, error: sseError } = useSse(ssePath, Boolean(job));
 
   useEffect(() => {
     if (!lastEvent) {
@@ -109,9 +124,18 @@ export default function FinetunePage() {
       }));
     }
     if (lastEvent.type === "metrics") {
-      const payload = lastEvent.payload as Record<string, number>;
+      const payload = lastEvent.payload as MetricsPayload;
       setMetrics(payload);
       setMetricsHistory((prev) => [...prev.slice(-199), payload]);
+      setJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              iter: payload.iter ?? prev.iter,
+              max_iters: payload.max_iters ?? prev.max_iters,
+            }
+          : prev
+      );
     }
     if (lastEvent.type === "eval") {
       const payload = lastEvent.payload as Record<string, number>;
@@ -119,14 +143,26 @@ export default function FinetunePage() {
     }
     if (lastEvent.type === "checkpoint") {
       const payload = lastEvent.payload as { iter: number };
-      setLogs((prev) => [`Checkpoint saved at ${payload.iter}`, ...prev].slice(0, 50));
+      setLogs((prev) => [`Checkpoint saved at ${payload.iter}`, ...prev].slice(0, 200));
     }
     if (lastEvent.type === "eval") {
       const payload = lastEvent.payload as { iter?: number; train_loss?: number; val_loss?: number };
       const iter = payload.iter ?? "?";
       const train = payload.train_loss?.toFixed?.(4) ?? "-";
       const val = payload.val_loss?.toFixed?.(4) ?? "-";
-      setLogs((prev) => [`Eval @ ${iter}: train ${train}, val ${val}`, ...prev].slice(0, 50));
+      setLogs((prev) => [`Eval @ ${iter}: train ${train}, val ${val}`, ...prev].slice(0, 200));
+    }
+    if (lastEvent.type === "log") {
+      const payload = lastEvent.payload as { message?: string };
+      if (payload?.message) {
+        setLogs((prev) => [payload.message, ...prev].slice(0, 200));
+      }
+    }
+    if (lastEvent.type === "done") {
+      setJob((prev) => ({
+        ...(prev || {}),
+        ...(lastEvent.payload as Record<string, unknown>),
+      }));
     }
     if (lastEvent.type === "error") {
       const payload = lastEvent.payload as { message?: string };
@@ -134,7 +170,21 @@ export default function FinetunePage() {
     }
   }, [lastEvent]);
 
-  const progress = job ? Math.min(job.iter / job.max_iters, 1) : 0;
+  useEffect(() => {
+    if (sseError) {
+      setError(sseError);
+    }
+  }, [sseError]);
+
+  const isRunning = job?.status === "running";
+  const isPaused = job?.status === "paused";
+  const isInactive = !job || ["completed", "error", "canceled"].includes(job.status);
+  const progress = job && job.max_iters ? Math.min(job.iter / job.max_iters, 1) : 0;
+  const elapsedTime = metrics?.elapsed_time;
+  const etaSeconds = metrics?.eta_seconds;
+  const elapsedDisplay = elapsedTime !== undefined ? formatDuration(elapsedTime) : job ? "Calculating..." : "-";
+  const etaDisplay =
+    etaSeconds !== undefined && etaSeconds !== null ? formatDuration(etaSeconds) : job ? "Calculating..." : "-";
   const layersCount = checkpointConfig ? Number(checkpointConfig.n_layers || 0) : 0;
   const headsCount = checkpointConfig ? Number(checkpointConfig.n_heads || 0) : 0;
 
@@ -159,6 +209,7 @@ export default function FinetunePage() {
         body: form,
       });
       setJob(data);
+      setMetrics(null);
       setLogs([]);
       setMetricsHistory([]);
       setEvalHistory([]);
@@ -193,6 +244,18 @@ export default function FinetunePage() {
     await fetchJson(`/api/finetune/jobs/${job.job_id}/resume`, { method: "POST" });
   };
 
+  const handlePrimaryAction = async () => {
+    if (!job || isInactive) {
+      await createJob();
+      return;
+    }
+    if (job.status === "running") {
+      await pauseJob();
+      return;
+    }
+    await resumeJob();
+  };
+
   const loadSnippets = async () => {
     setError(null);
     try {
@@ -207,10 +270,13 @@ export default function FinetunePage() {
     }
   };
 
-  const inspectBatch = async () => {
+  const inspectBatch = async (sampleIndex?: number, silent = false) => {
     if (!job) return;
-    setError(null);
+    if (!silent) {
+      setError(null);
+    }
     try {
+      const index = sampleIndex ?? inspectSample;
       const data = await fetchJson<{
         token_labels: string[];
         prompt_tokens: string[];
@@ -219,7 +285,7 @@ export default function FinetunePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sample_index: inspectSample,
+          sample_index: index,
           max_tokens: inspectMaxTokens,
         }),
       });
@@ -234,13 +300,14 @@ export default function FinetunePage() {
     if (!job) return;
     setError(null);
     try {
+      const index = isRunning ? 0 : inspectSample;
       const data = await fetchJson<{ attention: number[][] }>(
         `/api/finetune/jobs/${job.job_id}/attention`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            sample_index: inspectSample,
+            sample_index: index,
             max_tokens: inspectMaxTokens,
             layer: attnLayer,
             head: attnHead,
@@ -252,6 +319,43 @@ export default function FinetunePage() {
       setError((err as Error).message);
     }
   };
+
+  useEffect(() => {
+    let active = true;
+    setSnippetsLoading(true);
+    const timeout = setTimeout(() => {
+      loadSnippets().finally(() => {
+        if (active) {
+          setSnippetsLoading(false);
+        }
+      });
+    }, 400);
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [method]);
+
+  useEffect(() => {
+    if (job?.status === "running") {
+      setInspectSample(0);
+    }
+  }, [job?.status]);
+
+  useEffect(() => {
+    if (!job || job.status !== "running") {
+      return;
+    }
+    if (!lastEvent || lastEvent.type !== "metrics") {
+      return;
+    }
+    const now = Date.now();
+    if (now - inspectThrottleRef.current < 1000) {
+      return;
+    }
+    inspectThrottleRef.current = now;
+    inspectBatch(0, true);
+  }, [lastEvent, job, inspectMaxTokens]);
 
   return (
     <>
@@ -506,6 +610,16 @@ export default function FinetunePage() {
         <div className="card">
           <MarkdownBlock content={finetuneEquations} />
           {method === "lora" && <MarkdownBlock content={loraEquations} />}
+          <div style={{ marginTop: 16 }}>
+            <h3>Code Snippets</h3>
+            {snippetsLoading ? (
+              <p>Loading code snippets...</p>
+            ) : snippets.length === 0 ? (
+              <p>No snippets available yet.</p>
+            ) : (
+              snippets.map((snippet) => <CodePanel key={snippet.title} snippet={snippet} />)
+            )}
+          </div>
         </div>
       </section>
 
@@ -516,11 +630,12 @@ export default function FinetunePage() {
         </div>
         <div className="card">
           <div className="inline-row" style={{ marginBottom: 12 }}>
-            <button className="primary" onClick={createJob}>Start Fine-Tuning</button>
-            <button className="secondary" onClick={pauseJob} disabled={!job}>Pause</button>
-            <button className="secondary" onClick={resumeJob} disabled={!job}>Resume</button>
-            <button className="secondary" onClick={stepJob} disabled={!job}>Step</button>
-            <button className="secondary" onClick={loadSnippets}>Load Code Snippets</button>
+            <button className="primary" onClick={handlePrimaryAction}>
+              {!job ? "Start Fine-Tuning" : isRunning ? "Pause" : isPaused ? "Resume" : "Start New"}
+            </button>
+            <button className="secondary" onClick={stepJob} disabled={!job || isRunning}>
+              Step
+            </button>
           </div>
           {job && (
             <>
@@ -544,15 +659,20 @@ export default function FinetunePage() {
         </div>
         <div className="card">
           <div className="grid-3" style={{ marginBottom: 12 }}>
+            <StatCard label="Progress" value={`${(progress * 100).toFixed(1)}%`} />
+            <StatCard label="Elapsed" value={elapsedDisplay} />
+            <StatCard label="ETA" value={etaDisplay} />
+          </div>
+          <div className="grid-3" style={{ marginBottom: 12 }}>
             <StatCard label="Loss" value={metrics?.loss?.toFixed?.(4) || "-"} />
             <StatCard label="Running Loss" value={metrics?.running_loss?.toFixed?.(4) || "-"} />
             <StatCard label="Grad Norm" value={metrics?.grad_norm?.toFixed?.(4) || "-"} />
           </div>
           <LineChart
             data={metricsHistory.map((row) => ({
-              iter: row.iter || 0,
-              loss: row.loss || 0,
-              running_loss: row.running_loss || 0,
+              iter: row.iter ?? 0,
+              loss: row.loss ?? 0,
+              running_loss: row.running_loss ?? 0,
             }))}
             xKey="iter"
             lines={[
@@ -576,6 +696,7 @@ export default function FinetunePage() {
                 type="number"
                 value={inspectSample}
                 onChange={(event) => setInspectSample(Number(event.target.value))}
+                disabled={isRunning}
               />
             </div>
             <div>
@@ -584,20 +705,22 @@ export default function FinetunePage() {
                 type="number"
                 value={inspectMaxTokens}
                 onChange={(event) => setInspectMaxTokens(Number(event.target.value))}
+                disabled={isRunning}
               />
             </div>
             <div>
               <label>Actions</label>
               <div className="inline-row">
-                <button className="secondary" onClick={inspectBatch} disabled={!job}>
+                <button className="secondary" onClick={() => inspectBatch()} disabled={!job || isRunning}>
                   Load Batch
                 </button>
-                <button className="secondary" onClick={loadAttention} disabled={!job || !inspectData}>
+                <button className="secondary" onClick={loadAttention} disabled={!job || !inspectData || isRunning}>
                   Load Attention
                 </button>
               </div>
             </div>
           </div>
+          {isRunning && <p>Live batch inspection updates while training is running.</p>}
 
           {inspectData ? (
             <div className="grid-2">
@@ -683,19 +806,6 @@ export default function FinetunePage() {
         </div>
       </section>
 
-      <section className="section">
-        <div className="section-title">
-          <h2>Code Snippets</h2>
-          <p>Inspect fine-tuning code paths.</p>
-        </div>
-        <div>
-          {snippets.length === 0 ? (
-            <div className="card">Load code snippets to inspect fine-tuning modules.</div>
-          ) : (
-            snippets.map((snippet) => <CodePanel key={snippet.title} snippet={snippet} />)
-          )}
-        </div>
-      </section>
     </>
   );
 }

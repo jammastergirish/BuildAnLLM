@@ -41,6 +41,8 @@ class TrainingJob:
     eval_interval: int
     save_interval: int
     created_at: float = field(default_factory=time.time)
+    started_at: Optional[float] = None
+    accumulated_time: float = 0.0
     status: str = "paused"
     step: int = 0
     error: Optional[str] = None
@@ -60,6 +62,8 @@ class TrainingJob:
         else:
             self._run_event.set()
             self.status = "running"
+            if self.started_at is None:
+                self.started_at = time.time()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         self.events.put("status", self._status_payload())
@@ -68,6 +72,7 @@ class TrainingJob:
         self._run_event.clear()
         if self.status not in {"completed", "error", "canceled"}:
             self.status = "paused"
+        self._freeze_time()
         self.events.put("status", self._status_payload())
 
     def resume(self) -> None:
@@ -75,6 +80,8 @@ class TrainingJob:
             return
         self._run_event.set()
         self.status = "running"
+        if self.started_at is None:
+            self.started_at = time.time()
         self.events.put("status", self._status_payload())
 
     def cancel(self) -> None:
@@ -82,22 +89,31 @@ class TrainingJob:
         self._run_event.set()
         if self.status not in {"completed", "error"}:
             self.status = "canceled"
+        self._freeze_time()
         self.events.put("status", self._status_payload())
 
     def step_once(self, include_batch: bool = False) -> Dict[str, Any]:
         with self.lock:
+            step_start = time.time()
             metrics = self.trainer.train_single_step()
             self.step += 1
             self.last_metrics = metrics
+            if self.started_at is None:
+                self.accumulated_time += time.time() - step_start
             payload = _serialize_metrics(metrics, include_batch=include_batch)
             payload["iter"] = self.step
             payload["max_iters"] = self.trainer.max_iters
+            payload.update(self._timing_payload())
+            log_line = _format_log_line(self.kind, self.step, self.trainer.max_iters, metrics, payload)
+            self.events.put("log", {"message": log_line, "iter": self.step})
+            print(log_line, flush=True)
             self.events.put("metrics", payload)
             if self.step >= self.trainer.max_iters and self.status != "canceled":
                 self.trainer.save_checkpoint(self.trainer.max_iters, is_final=True)
                 if hasattr(self.trainer, "save_loss_graph"):
                     self.trainer.save_loss_graph()
                 self.status = "completed"
+                self._freeze_time()
                 self.events.put("done", self._status_payload())
             return payload
 
@@ -114,6 +130,10 @@ class TrainingJob:
                     payload = _serialize_metrics(metrics, include_batch=False)
                     payload["iter"] = self.step
                     payload["max_iters"] = self.trainer.max_iters
+                    payload.update(self._timing_payload())
+                log_line = _format_log_line(self.kind, self.step, self.trainer.max_iters, metrics, payload)
+                self.events.put("log", {"message": log_line, "iter": self.step})
+                print(log_line, flush=True)
                 self.events.put("metrics", payload)
 
                 if self.eval_interval > 0 and self.step % self.eval_interval == 0:
@@ -133,10 +153,12 @@ class TrainingJob:
                 if hasattr(self.trainer, "save_loss_graph"):
                     self.trainer.save_loss_graph()
                 self.status = "completed"
+                self._freeze_time()
                 self.events.put("done", self._status_payload())
         except Exception as exc:  # pragma: no cover - defensive logging
             self.error = str(exc)
             self.status = "error"
+            self._freeze_time()
             self.events.put("error", {"message": self.error})
 
     def _status_payload(self) -> Dict[str, Any]:
@@ -148,6 +170,28 @@ class TrainingJob:
             "max_iters": self.trainer.max_iters,
             "created_at": self.created_at,
         }
+
+    def _elapsed_time(self) -> float:
+        if self.started_at is None:
+            return self.accumulated_time
+        return self.accumulated_time + (time.time() - self.started_at)
+
+    def _timing_payload(self) -> Dict[str, Any]:
+        elapsed = self._elapsed_time()
+        iter_per_sec = self.step / elapsed if elapsed > 0 else None
+        eta_seconds = None
+        if iter_per_sec and iter_per_sec > 0:
+            eta_seconds = max(0.0, (self.trainer.max_iters - self.step) / iter_per_sec)
+        return {
+            "elapsed_time": elapsed,
+            "iter_per_sec": iter_per_sec,
+            "eta_seconds": eta_seconds,
+        }
+
+    def _freeze_time(self) -> None:
+        if self.started_at is not None:
+            self.accumulated_time += time.time() - self.started_at
+            self.started_at = None
 
 
 class JobRegistry:
@@ -237,3 +281,41 @@ def _serialize_batch(metrics: Dict[str, Any]) -> Dict[str, Any]:
         if key in metrics:
             batch[key] = _tensor_to_list(metrics[key])
     return batch
+
+
+def _format_duration(seconds: Optional[float]) -> str:
+    if seconds is None or seconds < 0:
+        return "-"
+    total = int(seconds)
+    minutes, sec = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m {sec}s"
+    if minutes > 0:
+        return f"{minutes}m {sec}s"
+    return f"{sec}s"
+
+
+def _format_log_line(
+    kind: str,
+    step: int,
+    max_iters: int,
+    metrics: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> str:
+    loss = metrics.get("loss")
+    running = metrics.get("running_loss")
+    grad = metrics.get("grad_norm")
+    elapsed = payload.get("elapsed_time")
+    eta = payload.get("eta_seconds")
+    parts = [f"[{kind}] Iter {step}/{max_iters}"]
+    if loss is not None:
+        parts.append(f"loss={loss:.4f}")
+    if running is not None:
+        parts.append(f"avg={running:.4f}")
+    if grad is not None:
+        parts.append(f"grad={grad:.4f}")
+    parts.append(f"elapsed={_format_duration(elapsed)}")
+    if eta is not None:
+        parts.append(f"eta={_format_duration(eta)}")
+    return " ".join(parts)
