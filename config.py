@@ -91,6 +91,9 @@ class ModelConfig:
             else:  # LLaMA, OLMo
                 self.activation = Activation.SWIGLU
 
+        if self.positional_encoding == PositionalEncoding.ROPE and self.d_head % 2 != 0:
+            raise ValueError("d_head must be even when using RoPE.")
+
         # Set default router_type based on use_shared_experts if not explicitly set
         if self.use_moe and self.router_type is None:
             if self.use_shared_experts:

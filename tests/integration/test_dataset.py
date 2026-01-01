@@ -138,6 +138,22 @@ class TestSFTDataset:
         )
         assert torch.all(dataset.masks == 1)
 
+    def test_empty_responses_skipped(self, temp_checkpoint_dir, character_tokenizer):
+        """Test that empty responses are skipped."""
+        import pandas as pd
+
+        csv_path = f"{temp_checkpoint_dir}/skip_empty.csv"
+        df = pd.DataFrame({
+            "prompt": ["Q1", "Q2"],
+            "response": ["", "A2"]
+        })
+        df.to_csv(csv_path, index=False)
+
+        dataset = SFTDataset(csv_path, character_tokenizer, max_length=50)
+        assert len(dataset.prompts) == 1
+        assert dataset.X.shape[0] == 1
+        assert dataset.masks.sum().item() > 0
+
     def test_split_data(self, sample_csv_file, character_tokenizer):
         """Test data splitting."""
         dataset = SFTDataset(

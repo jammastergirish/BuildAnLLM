@@ -109,6 +109,11 @@ class TestModelConfig:
         with pytest.raises(ValueError):
             ModelConfig(architecture=Architecture.LLAMA, n_heads=4, n_kv_heads=8)
 
+    def test_rope_requires_even_d_head(self):
+        """Test RoPE requires even d_head."""
+        with pytest.raises(ValueError):
+            ModelConfig(architecture=Architecture.LLAMA, d_head=63)
+
 
 @pytest.mark.unit
 class TestTransformerTrainingArgs:
@@ -155,4 +160,3 @@ class TestFinetuningArgs:
         assert args.use_lora
         assert args.lora_rank == 16
         assert args.lora_alpha == 16.0
-

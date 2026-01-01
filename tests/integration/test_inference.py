@@ -114,3 +114,26 @@ class TestTransformerSampler:
         # Both should be valid tokens
         assert 0 <= token_low.item() < vocab_size
         assert 0 <= token_high.item() < vocab_size
+
+    def test_sampler_handles_moe_outputs(self, moe_config, character_tokenizer, device):
+        """Sampler should handle MoE outputs with auxiliary loss."""
+        from pretraining.model.model import TransformerModel
+
+        model = TransformerModel(moe_config, use_einops=True)
+        sampler = TransformerSampler(model, character_tokenizer, device)
+        model.train()  # Enable aux_loss in MoE
+
+        tokens = character_tokenizer.encode("Hello")
+        tokens_tensor = torch.tensor([tokens], dtype=torch.long, device=device)
+        logits, kv_cache, use_cache, start_pos = sampler._process_prompt(tokens_tensor)
+
+        assert logits.shape[0] == model.cfg.d_vocab
+        assert kv_cache is not None
+        assert use_cache is True
+
+        logits2, kv_cache2, use_cache2 = sampler._update_cache(
+            tokens_tensor, kv_cache, start_pos, use_cache
+        )
+        assert logits2.shape[0] == model.cfg.d_vocab
+        assert kv_cache2 is not None
+        assert use_cache2 is True

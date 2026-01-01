@@ -82,8 +82,11 @@ class SFTDataset:
         
         # Validate that responses are not all empty
         # Handle NaN values from pandas (empty strings may be read as NaN)
-        empty_responses = sum(1 for r in self.responses 
-                              if pd.isna(r) or (isinstance(r, str) and not r.strip()))
+        empty_response_mask = [
+            pd.isna(r) or (isinstance(r, str) and not r.strip())
+            for r in self.responses
+        ]
+        empty_responses = sum(1 for is_empty in empty_response_mask if is_empty)
         if empty_responses == len(self.responses):
             raise ValueError(
                 "All responses are empty! Please ensure your CSV has non-empty response values. "
@@ -92,6 +95,15 @@ class SFTDataset:
         if empty_responses > 0:
             print(f"Warning: {empty_responses} out of {len(self.responses)} responses are empty. "
                   "These will be skipped during training.")
+            filtered_pairs = [
+                (prompt, response)
+                for prompt, response, is_empty in zip(
+                    self.prompts, self.responses, empty_response_mask
+                )
+                if not is_empty
+            ]
+            if filtered_pairs:
+                self.prompts, self.responses = map(list, zip(*filtered_pairs))
         
         # Create sequences
         self.X, self.Y, self.masks = self._create_sequences()

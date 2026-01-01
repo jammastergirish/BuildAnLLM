@@ -133,6 +133,20 @@ class TestCharacterTokenizerWithTorch:
         decoded = character_tokenizer_torch.decode(tokens)
         assert decoded == text
 
+    def test_init_rejects_non_ascii(self):
+        """Non-ASCII training text should raise a clear error."""
+        text = "Hello " + chr(0x0100)
+        with pytest.raises(ValueError, match="byte-range"):
+            CharacterTokenizerWithTorch(text)
+
+    def test_encode_tensor_maps_non_ascii(self, character_tokenizer_torch):
+        """Non-ASCII input should map to the default token without crashing."""
+        text = "Hi" + chr(0x0100)
+        tensor = character_tokenizer_torch.encode_tensor(text)
+        assert isinstance(tensor, torch.Tensor)
+        assert len(tensor) == len(text)
+        assert tensor[-1].item() == 0
+
 
 @pytest.mark.unit
 class TestSimpleBPETokenizer:
@@ -285,4 +299,3 @@ class TestSentencePieceTokenizer:
         tokenizer1 = SentencePieceTokenizer(sample_text, vocab_size=100)
         tokenizer2 = SentencePieceTokenizer(sample_text, vocab_size=200)
         assert tokenizer2.vocab_size >= tokenizer1.vocab_size
-

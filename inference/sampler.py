@@ -125,6 +125,21 @@ class TransformerSampler:
         logits[indices_to_remove] = float("-inf")
         return logits
 
+    def _split_model_output(
+        self,
+        result,
+    ) -> tuple[torch.Tensor, Optional[list]]:
+        """Extract logits and optional cache from model output."""
+        if not isinstance(result, tuple):
+            return result, None
+        logits = result[0]
+        cache = None
+        for item in result[1:]:
+            if isinstance(item, (list, tuple)):
+                cache = item
+                break
+        return logits, cache
+
     def _process_prompt(
         self,
         tokens_tensor: torch.Tensor
@@ -146,13 +161,8 @@ class TransformerSampler:
         # Try to get model predictions with cache support
         try:
             result = self.model(tokens_tensor, cache=None, start_pos=0)
-            if isinstance(result, tuple):
-                logits, kv_cache = result
-                use_cache = True
-            else:
-                logits = result
-                kv_cache = None
-                use_cache = False
+            logits, kv_cache = self._split_model_output(result)
+            use_cache = kv_cache is not None
         except TypeError:
             # Backward compatibility: model doesn't support cache
             logits = self.model(tokens_tensor)
@@ -241,18 +251,18 @@ class TransformerSampler:
             try:
                 result = self.model(
                     new_token_tensor, cache=kv_cache, start_pos=start_pos)
-                if isinstance(result, tuple):
-                    logits, kv_cache = result
+                logits, kv_cache = self._split_model_output(result)
+                if kv_cache is not None:
                     return logits[0, -1, :], kv_cache, True
-                return result[0, -1, :], None, False
+                return logits[0, -1, :], None, False
             except TypeError:
                 # Backward compatibility: model doesn't support cache
                 logits = self.model(new_token_tensor)
                 return logits[0, -1, :], None, False
         # Fallback: process full sequence (no cache)
-        logits = self.model(tokens_tensor)
-        if isinstance(logits, tuple):
-            logits, kv_cache = logits
+        result = self.model(tokens_tensor)
+        logits, kv_cache = self._split_model_output(result)
+        if kv_cache is not None:
             return logits[0, -1, :], kv_cache, True
         return logits[0, -1, :], None, False
 

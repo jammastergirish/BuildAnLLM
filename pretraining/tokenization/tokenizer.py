@@ -34,6 +34,11 @@ class CharacterTokenizerWithTorch:
 
     def __init__(self, text: str):
         chars = sorted(list(set(text)))
+        if any(ord(ch) >= 256 for ch in chars):
+            raise ValueError(
+                "CharacterTokenizerWithTorch only supports byte-range characters (ord < 256). "
+                "Use CharacterTokenizer for full Unicode input."
+            )
         self.vocab_size = len(chars)
         self.stoi: Dict[str, int] = {ch: i for i, ch in enumerate(chars)}
         self.itos: Dict[int, str] = {i: ch for i, ch in enumerate(chars)}
@@ -53,7 +58,7 @@ class CharacterTokenizerWithTorch:
     def encode_tensor(self, text: str) -> torch.Tensor:
         """Convert text to tensor using torch operations"""
         # Convert string to byte array, then to tensor
-        byte_array = [ord(c) for c in text]
+        byte_array = [ord(c) if ord(c) < 256 else 0 for c in text]
         indices = self.char_to_idx[torch.tensor(byte_array, dtype=torch.long)]
         return indices
 
@@ -305,4 +310,3 @@ class SentencePieceTokenizer:
     def decode_tensor(self, tokens: torch.Tensor) -> str:
         """Convert tensor of token IDs back to text"""
         return self.decode(tokens.tolist())
-

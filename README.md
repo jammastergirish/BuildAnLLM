@@ -20,7 +20,7 @@ _(Comments, corrections, and pull requests are very welcome. Currently, this rep
 ## Quickstart ##
 
 ```bash
-uv run --with streamlit streamlit run main.py
+./run.sh
 ```
 
 ## What You'll Learn
@@ -57,11 +57,6 @@ The codebase includes both educational implementations (showing the math and ope
 ### Getting Started
 
 This project is a **Streamlit web application** that provides an interactive interface for training and inference.
-
-**Start the application:**
-```bash
-uv run --with streamlit streamlit run main.py
-```
 
 The app will open in your browser with the following pages:
 - **Main**: Overview and this README
