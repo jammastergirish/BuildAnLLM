@@ -4,3 +4,27 @@ __pycache__/
 *.pt
 pages/.DS_Store
 .DS_Store
+
+# Python/virtualenv
+.venv/
+venv/
+__pypackages__/
+.pytest_cache/
+.mypy_cache/
+
+# Node/Next.js
+node_modules/
+.next/
+out/
+dist/
+
+# Build artifacts and logs
+*.log
+*.gz
+*.zip
+*.tar
+*.tgz
+
+# Tooling output
+.cache/
+.net/
