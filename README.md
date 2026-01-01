@@ -19,9 +19,25 @@ _(Comments, corrections, and pull requests are very welcome. Currently, this rep
 
 ## Quickstart ##
 
+### Local ###
+
+The following command will install `uv` and run the app:
+
 ```bash
 ./run.sh
 ```
+
+### Remote (via RunPod) ###
+
+If running locally isn't an option, I'd suggest [RunPod](https://runpod.io?ref=avnw83xb):
+
+- Create a new pod.
+- Press 'Edit Template' and add `8501` to the list of exposed HTTP ports.
+- (You may want to increase the persistent disk space (Volume Disk).)
+- Click, "Set Overrides," and, "Deploy On-Demand," and wait for the deployment to complete.
+- You'll then want to SSH into the instance, either via the browser or in your own terminal, as per the given instructions.
+- Once you're in, you'll need to run `git clone https://github.com/jammastergirish/BuildAnLLM && cd BuildAnLLM && ./run_runpod.sh`, which will clone the repository, install `uv`, and run the project.
+- You can then see the web app in your browser via instructions in the Connect panel at RunPod.
 
 ## What You'll Learn
 
