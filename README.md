@@ -17,30 +17,11 @@ I'm incredibly grateful to all those from whom I learned and borrowed ideas (see
 
 ## Quickstart ##
 
-### Local ###
-
 The following command will install `uv` and run the app:
 
 ```bash
 ./run.sh
 ```
-
-## What You'll Learn
-
-By exploring the interface and codebase, you'll gain a deep understanding of:
-
-- **Transformer Architecture**: How decoder-only language models work from the ground up
-- **Core Components**: Attention mechanisms, normalization layers, positional encodings, and feedforward networks
-- **Architecture Variants**: Differences between GPT, LLaMA, and OLMo implementations
-- **Mixture of Experts (MoE)**: How MoE architectures use multiple expert MLPs with routing to scale model capacity efficiently
-- **Pre-Training Process**: How to pre-train a language model using next-token prediction on raw text
-- **Fine-Tuning Process**: How to fine-tune a pre-trained model on prompt/response pairs using supervised fine-tuning (SFT)
-- **Loss Masking**: How to compute loss only on response tokens (not prompt tokens) during fine-tuning
-- **Text Generation**: Autoregressive generation and sampling strategies (temperature, top-k, top-p)
-- **KV Caching**: Efficient inference optimization that speeds up text generation by caching key-value tensors
-- **Implementation Details**: Multiple implementation approaches (with/without einops, manual vs PyTorch built-ins) to understand what's happening under the hood
-
-The codebase includes both educational implementations (showing the math and operations explicitly) and optimized versions, so you can see how concepts translate to actual code.
 
 ## Contents
 
