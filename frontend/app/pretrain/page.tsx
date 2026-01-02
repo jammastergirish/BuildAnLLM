@@ -36,6 +36,9 @@ type MetricsPayload = {
   eta_seconds?: number;
 };
 
+type AxisDomainValue = number | "dataMax";
+type AxisDomain = [AxisDomainValue, AxisDomainValue];
+
 export default function PretrainPage() {
   const [modelConfig, setModelConfig] = useState<ModelConfig>(defaultModelConfig);
   const [modelSize, setModelSize] = useState<ModelSize>("small");
@@ -91,7 +94,7 @@ export default function PretrainPage() {
     if (lastEvent.type === "metrics") {
       const payload = lastEvent.payload as MetricsPayload;
       setMetrics(payload);
-      setMetricsHistory((prev) => [...prev.slice(-199), payload]);
+      setMetricsHistory((prev) => [...prev, payload]);
       setJob((prev) =>
         prev
           ? {
@@ -161,6 +164,9 @@ export default function PretrainPage() {
   const elapsedDisplay = elapsedTime !== undefined ? formatDuration(elapsedTime) : job ? "Calculating..." : "-";
   const etaDisplay =
     etaSeconds !== undefined && etaSeconds !== null ? formatDuration(etaSeconds) : job ? "Calculating..." : "-";
+  const lossXMax = job?.max_iters ?? metrics?.max_iters ?? 0;
+  const lossXDomain: AxisDomain = lossXMax > 0 ? [0, lossXMax] : [0, 1];
+  const lossYDomain: AxisDomain = metricsHistory.length > 0 ? [0, "dataMax"] : [0, 1];
 
   const handlePreset = (preset: string) => {
     setModelConfig((prev) => applyPreset(prev, preset));
@@ -880,6 +886,10 @@ export default function PretrainPage() {
               running_loss: row.running_loss ?? 0,
             }))}
             xKey="iter"
+            xLabel="Iteration"
+            yLabel="Loss"
+            xDomain={lossXDomain}
+            yDomain={lossYDomain}
             lines={[
               { dataKey: "loss", name: "Loss", color: "var(--accent)" },
               { dataKey: "running_loss", name: "Running Loss", color: "var(--accent-2)" },

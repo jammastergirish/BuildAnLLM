@@ -8,6 +8,7 @@ import {
   XAxis,
   YAxis,
   Legend,
+  Label,
 } from "recharts";
 
 export type LineSeries = {
@@ -16,21 +17,42 @@ export type LineSeries = {
   color: string;
 };
 
+type AxisDomainValue = number | "dataMin" | "dataMax" | "auto";
+type AxisDomain = [AxisDomainValue, AxisDomainValue];
+
 export default function LineChart({
   data,
   lines,
   xKey,
+  xLabel,
+  yLabel,
+  xDomain,
+  yDomain,
 }: {
   data: Array<Record<string, number>>;
   lines: LineSeries[];
   xKey: string;
+  xLabel?: string;
+  yLabel?: string;
+  xDomain?: AxisDomain;
+  yDomain?: AxisDomain;
 }) {
+  const margin = {
+    top: 8,
+    right: 16,
+    left: yLabel ? 24 : 0,
+    bottom: xLabel ? 24 : 0,
+  };
+
   return (
     <div style={{ width: "100%", height: 260 }}>
       <ResponsiveContainer>
-        <RechartsLineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <RechartsLineChart data={data} margin={margin}>
           <XAxis
             dataKey={xKey}
+            type="number"
+            domain={xDomain}
+            allowDataOverflow={Boolean(xDomain)}
             stroke="var(--chart-axis)"
             tick={{
               fontSize: 12,
@@ -39,8 +61,15 @@ export default function LineChart({
             }}
             tickLine={{ stroke: "var(--chart-axis)" }}
             axisLine={{ stroke: "var(--chart-axis)" }}
-          />
+          >
+            {xLabel && (
+              <Label value={xLabel} position="insideBottom" offset={-6} fill="var(--chart-text)" />
+            )}
+          </XAxis>
           <YAxis
+            type="number"
+            domain={yDomain}
+            allowDataOverflow={Boolean(yDomain)}
             stroke="var(--chart-axis)"
             tick={{
               fontSize: 12,
@@ -49,7 +78,17 @@ export default function LineChart({
             }}
             tickLine={{ stroke: "var(--chart-axis)" }}
             axisLine={{ stroke: "var(--chart-axis)" }}
-          />
+          >
+            {yLabel && (
+              <Label
+                value={yLabel}
+                angle={-90}
+                position="insideLeft"
+                offset={-8}
+                fill="var(--chart-text)"
+              />
+            )}
+          </YAxis>
           <Tooltip
             contentStyle={{
               background: "var(--tooltip-bg)",
