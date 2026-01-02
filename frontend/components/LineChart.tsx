@@ -37,8 +37,9 @@ export default function LineChart({
   xDomain?: AxisDomain;
   yDomain?: AxisDomain;
 }) {
+  const legendAtTop = Boolean(xLabel);
   const margin = {
-    top: 8,
+    top: legendAtTop ? 28 : 8,
     right: 16,
     left: yLabel ? 24 : 0,
     bottom: xLabel ? 24 : 0,
@@ -101,10 +102,12 @@ export default function LineChart({
             itemStyle={{ color: "var(--ink-1)" }}
           />
           <Legend
+            verticalAlign={legendAtTop ? "top" : "bottom"}
             wrapperStyle={{
               color: "var(--chart-text)",
               fontSize: 12,
               fontFamily: "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
+              paddingTop: legendAtTop ? 4 : 0,
             }}
           />
           {lines.map((line) => (

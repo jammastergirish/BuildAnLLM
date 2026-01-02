@@ -537,16 +537,23 @@ button.secondary:hover {
   max-width: 80%;
   width: 100%;
   margin: 0 auto;
-  line-height: 2.2;
+  color: var(--ink-1);
+  line-height: 2.4;
 }
 
-.readme-content p {
-  line-height: 2.6;
+.card .readme-content p,
+.card .readme-content li {
+  color: inherit;
+  font-family: inherit;
+  line-height: inherit;
+}
+
+.card .readme-content p {
   margin: 0 0 1.8em;
 }
 
-.readme-content li {
-  margin: 0.3em 0;
+.card .readme-content li {
+  margin: 0.35em 0;
 }
 
 .log-box {

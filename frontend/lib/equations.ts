@@ -1,4 +1,4 @@
-export const modelEquations = `
+export const modelEquations = String.raw`
 ### Key notation
 - **x**: input tensor [B, L, d_model]
 - **W_Q, W_K, W_V, W_O**: attention matrices
@@ -34,7 +34,7 @@ $$x_{i+1} = x_i + \text{attn}(x_i)$$
 $$x_{i+2} = x_{i+1} + \text{mlp}(x_{i+1})$$
 `;
 
-export const inferenceEquations = `
+export const inferenceEquations = String.raw`
 ### Autoregressive generation
 $$t_i \sim \text{sample}(\text{logits}_i)$$
 
@@ -48,7 +48,7 @@ Keep the top k logits and set the rest to $-\infty$.
 Keep the smallest set of tokens whose cumulative probability exceeds p.
 `;
 
-export const finetuneEquations = `
+export const finetuneEquations = String.raw`
 ### Sequence construction
 $$\text{sequence} = [\text{prompt}] + [\text{response}]$$
 
@@ -58,7 +58,7 @@ $$m_i = 1 \text{ for response tokens, } 0 \text{ otherwise}$$
 $$\mathcal{L} = \frac{\sum_i m_i \cdot \mathcal{L}_i}{\sum_i m_i}$$
 `;
 
-export const loraEquations = `
+export const loraEquations = String.raw`
 ### LoRA adaptation
 $$W_{effective} = W + \frac{\alpha}{r} (B A)$$
 
