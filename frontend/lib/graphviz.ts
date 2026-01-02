@@ -41,21 +41,21 @@ export function generateGraphvizArchitecture(config: ModelConfig) {
     headsTxt += "\\n(ALiBi)";
   }
 
-  let mlpTxt = "MLP m";
+  let mlpLabel = "MLP <i>m</i>";
   if (config.use_moe) {
     const nExp = config.num_experts || 8;
     const kExp = config.num_experts_per_tok || 2;
-    mlpTxt = `MoE MLP\\n(${nExp} Experts, top-${kExp})`;
+    mlpLabel = `MoE MLP<BR/>(${nExp} Experts, top-${kExp})`;
   } else if (activation === "swiglu") {
-    mlpTxt += "\\n(SwiGLU)";
+    mlpLabel += "<BR/>(SwiGLU)";
   }
 
-  dot.push('    tokens [label="tokens", shape=box3d, group=main];');
-  dot.push('    embed [label="embed", group=main];');
-  dot.push(`    note_embed [shape=plaintext, style=none, label=${makeNoteLabel("Token embedding.", "x&#8320; = W&#7431;t")}];`);
+  dot.push('    tokens [label="tokens", width=2.5, group=main];');
+  dot.push('    embed [label="embed", width=2.5, group=main];');
+  dot.push(`    note_embed [shape=plaintext, style=none, label=${makeNoteLabel("Token embedding", "x&#8320; = W&#7431;t")}];`);
 
-  dot.push('    unembed [label="unembed", group=main];');
-  dot.push('    logits [label="logits", group=main];');
+  dot.push('    unembed [label="unembed", group=main, width=2.5];');
+  dot.push('    logits [label="logits", group=main, width=2.5];');
   dot.push(`    note_unembed [shape=plaintext, style=none, label=${makeNoteLabel("Unembedding", "T(t) = W&#7516; x&#8331;&#8321;")}];`);
 
   dot.push("    tokens -> embed [weight=100];");
@@ -73,15 +73,15 @@ export function generateGraphvizArchitecture(config: ModelConfig) {
   dot.push(`        color="${colorSubtle}";`);
   dot.push("        margin=20;");
 
-  dot.push('        x0 [shape=plaintext, style=none, label=<<i>x</i><sub>0</sub>>, group=main];');
-  dot.push('        x1 [shape=plaintext, style=none, label=<<i>x</i><sub>i+1</sub>>, group=main];');
-  dot.push('        x2 [shape=plaintext, style=none, label=<<i>x</i><sub>i+2</sub>>, group=main];');
+  dot.push('        x0 [shape=plaintext, style=none, label=<<i>x</i><sub><i>0</i></sub>>, group=main];');
+  dot.push('        x1 [shape=plaintext, style=none, label=<<i>x</i><sub><i>i+1</i></sub>>, group=main];');
+  dot.push('        x2 [shape=plaintext, style=none, label=<<i>x</i><sub><i>i+2</i></sub>>, group=main];');
 
   dot.push('        plus1 [shape=circle, label="+", fixedsize=true, width=0.4, group=main];');
   dot.push('        plus2 [shape=circle, label="+", fixedsize=true, width=0.4, group=main];');
 
   dot.push(`        heads [label="${headsTxt}", width=2.5];`);
-  dot.push(`        mlp [label="${mlpTxt}", width=2.5];`);
+  dot.push(`        mlp [label=<${mlpLabel}>, width=2.5];`);
 
   dot.push(
     `        note_attn [shape=plaintext, style=none, label=${makeNoteLabel(
@@ -116,7 +116,7 @@ export function generateGraphvizArchitecture(config: ModelConfig) {
   dot.push("    }");
 
   dot.push("    embed -> x0 [weight=100];");
-  dot.push('    x_final [shape=plaintext, style=none, label=<<i>x</i><sub>-1</sub>>, group=main];');
+  dot.push('    x_final [shape=plaintext, style=none, label=<<i>x</i><sub><i>-1</i></sub>>, group=main];');
   dot.push('    x2 -> x_final [style=dotted, label="repeat...", weight=100];');
   dot.push("    x_final -> unembed [weight=100];");
 

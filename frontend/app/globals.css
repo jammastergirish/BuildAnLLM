@@ -873,6 +873,22 @@ input[type="range"]:disabled {
   );
 }
 
+.graphviz-diagram {
+  overflow: hidden;
+}
+
+.graphviz-diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.graphviz-diagram svg,
+.graphviz-diagram svg text,
+.graphviz-diagram svg tspan {
+  font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace !important;
+}
+
 .expander {
   border: 1px solid var(--stroke);
   border-radius: 14px;

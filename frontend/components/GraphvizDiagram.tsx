@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Viz } from "@viz-js/viz";
+import { instance } from "@viz-js/viz";
+import type { Viz } from "@viz-js/viz";
+
+let vizInstancePromise: Promise<Viz> | null = null;
+
+const getVizInstance = () => {
+  if (!vizInstancePromise) {
+    vizInstancePromise = instance();
+  }
+  return vizInstancePromise;
+};
 
 export default function GraphvizDiagram({ dot }: { dot: string }) {
   const [svg, setSvg] = useState<string>("");
@@ -11,8 +21,8 @@ export default function GraphvizDiagram({ dot }: { dot: string }) {
     let mounted = true;
     const render = async () => {
       try {
-        const viz = new Viz();
-        const output = await viz.renderString(dot);
+        const viz = await getVizInstance();
+        const output = viz.renderString(dot, { format: "svg", engine: "dot" });
         if (mounted) {
           setSvg(output);
         }
@@ -39,7 +49,7 @@ export default function GraphvizDiagram({ dot }: { dot: string }) {
 
   return (
     <div
-      className="card"
+      className="card graphviz-diagram"
       style={{ boxShadow: "none", background: "var(--card-muted)" }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
