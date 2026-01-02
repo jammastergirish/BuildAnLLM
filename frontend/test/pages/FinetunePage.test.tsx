@@ -59,6 +59,9 @@ describe("FinetunePage", () => {
           ],
         };
       }
+      if (path === "/api/docs/finetuning-code") {
+        return { snippets: [] };
+      }
       if (String(path).startsWith("/api/checkpoints/")) {
         return { cfg: { d_model: 256, n_layers: 2, n_heads: 4 } };
       }
@@ -77,9 +80,20 @@ describe("FinetunePage", () => {
     expect(fetchJsonMock.mock.calls.some(([path]) => String(path).startsWith("/api/checkpoints/"))).toBe(true);
   });
 
-  it("shows lora controls when selected", () => {
-    fetchJsonMock.mockResolvedValue({ checkpoints: [] });
+  it("shows lora controls when selected", async () => {
+    fetchJsonMock.mockImplementation(async (path) => {
+      if (path === "/api/checkpoints") {
+        return { checkpoints: [] };
+      }
+      if (path === "/api/docs/finetuning-code") {
+        return { snippets: [] };
+      }
+      return {};
+    });
     render(<FinetunePage />);
+    await waitFor(() => {
+      expect(fetchJsonMock).toHaveBeenCalled();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "LoRA" }));
     expect(screen.getByText(/LoRA enabled/)).toBeInTheDocument();
@@ -87,8 +101,19 @@ describe("FinetunePage", () => {
   });
 
   it("previews CSV content when a file is chosen", async () => {
-    fetchJsonMock.mockResolvedValue({ checkpoints: [] });
+    fetchJsonMock.mockImplementation(async (path) => {
+      if (path === "/api/checkpoints") {
+        return { checkpoints: [] };
+      }
+      if (path === "/api/docs/finetuning-code") {
+        return { snippets: [] };
+      }
+      return {};
+    });
     const { container } = render(<FinetunePage />);
+    await waitFor(() => {
+      expect(fetchJsonMock).toHaveBeenCalled();
+    });
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["prompt,response\nHello,World\n"], "data.csv", { type: "text/csv" });
@@ -107,6 +132,9 @@ describe("FinetunePage", () => {
       if (path === "/api/checkpoints") {
         return { checkpoints: [{ id: "ckpt-1", name: "checkpoint_1.pt", mtime: 100, is_finetuned: false }] };
       }
+      if (path === "/api/docs/finetuning-code") {
+        return { snippets: [] };
+      }
       if (path === "/api/finetune/jobs") {
         return {
           job_id: "job-1",
@@ -124,6 +152,12 @@ describe("FinetunePage", () => {
     });
 
     render(<FinetunePage />);
+
+    await waitFor(() => {
+      const option = screen.getByRole("option", { name: "Select checkpoint" });
+      const select = option.parentElement as HTMLSelectElement;
+      expect(select.value).toBe("ckpt-1");
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "LoRA" }));
     fireEvent.click(screen.getByRole("button", { name: "Start Fine-Tuning" }));

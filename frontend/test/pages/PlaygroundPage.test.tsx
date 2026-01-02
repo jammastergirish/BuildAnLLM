@@ -46,7 +46,8 @@ describe("PlaygroundPage", () => {
       expect(screen.getByText("!")).toBeInTheDocument();
     });
 
-    const tokensStat = screen.getByText("Tokens").closest(".stat");
+    const tokensHeading = screen.getByRole("heading", { name: "Tokens" });
+    const tokensStat = tokensHeading.closest(".stat");
     expect(tokensStat).toHaveTextContent("2");
   });
 });

@@ -46,6 +46,10 @@ describe("PretrainPage", () => {
     fetchJsonMock.mockReset();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("switches tokenizer when preset changes", () => {
     fetchJsonMock.mockResolvedValue({ snippets: [] });
     render(<PretrainPage />);
@@ -66,13 +70,11 @@ describe("PretrainPage", () => {
 
     render(<PretrainPage />);
     await act(async () => {
-      vi.runAllTimers();
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
     });
 
-    await waitFor(() => {
-      expect(screen.getByText("Snippet A")).toBeInTheDocument();
-    });
-    vi.useRealTimers();
+    expect(screen.getByText("Snippet A")).toBeInTheDocument();
   });
 
   it("starts a training job with form data payload", async () => {

@@ -53,13 +53,6 @@ describe("InferencePage", () => {
           cfg: { d_model: 256, n_layers: 2, n_heads: 4, n_ctx: 128 },
         };
       }
-      if (String(path).includes("/diagnostics")) {
-        return {
-          diagnostic_id: "diag-1",
-          token_ids: [1, 2],
-          token_labels: ["A", "B"],
-        };
-      }
       if (String(path).includes("/attention")) {
         return { attention: [[1, 0], [0, 1]] };
       }
@@ -68,6 +61,13 @@ describe("InferencePage", () => {
       }
       if (String(path).includes("/layer-norms")) {
         return { layers: [{ layer: 0, avg_norm: 1.23 }] };
+      }
+      if (String(path).includes("/diagnostics")) {
+        return {
+          diagnostic_id: "diag-1",
+          token_ids: [1, 2],
+          token_labels: ["A", "B"],
+        };
       }
       if (path === "/api/docs/inference-code") {
         return { snippets: [] };
@@ -100,13 +100,6 @@ describe("InferencePage", () => {
           cfg: { d_model: 256, n_layers: 2, n_heads: 4, n_ctx: 128 },
         };
       }
-      if (String(path).includes("/diagnostics")) {
-        return {
-          diagnostic_id: "diag-1",
-          token_ids: [1, 2],
-          token_labels: ["A", "B"],
-        };
-      }
       if (String(path).includes("/attention")) {
         return { attention: [[1, 0], [0, 1]] };
       }
@@ -115,6 +108,13 @@ describe("InferencePage", () => {
       }
       if (String(path).includes("/layer-norms")) {
         return { layers: [] };
+      }
+      if (String(path).includes("/diagnostics")) {
+        return {
+          diagnostic_id: "diag-1",
+          token_ids: [1, 2],
+          token_labels: ["A", "B"],
+        };
       }
       if (path === "/api/docs/inference-code") {
         return { snippets: [] };
@@ -157,7 +157,7 @@ describe("InferencePage", () => {
       const textareas = screen.getAllByRole("textbox");
       const output = textareas.find((node) => (node as HTMLTextAreaElement).readOnly);
       expect(output).toBeDefined();
-      expect(output).toHaveValue(expect.stringContaining("X"));
+      expect((output as HTMLTextAreaElement).value).toContain("X");
     });
   });
 });
