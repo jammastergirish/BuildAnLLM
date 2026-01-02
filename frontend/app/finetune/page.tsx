@@ -10,6 +10,7 @@ import SideNav from "../../components/SideNav";
 import StatCard from "../../components/StatCard";
 import TokenSegments from "../../components/TokenSegments";
 import TrainingControls from "../../components/TrainingControls";
+import ModelConfigSummary from "../../components/ModelConfigSummary";
 import { fetchJson, makeFormData, Checkpoint, CodeSnippet, JobStatus } from "../../lib/api";
 import { useSse } from "../../lib/useSse";
 import { useScrollSpy } from "../../lib/useScrollSpy";
@@ -45,7 +46,7 @@ const finetuneSections = [
 export default function FinetunePage() {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<string>("");
-  const [checkpointConfig, setCheckpointConfig] = useState<Record<string, number | string> | null>(null);
+  const [checkpointConfig, setCheckpointConfig] = useState<Record<string, number | string | boolean> | null>(null);
   const [method, setMethod] = useState<"full" | "lora">("full");
   const [loraConfig, setLoraConfig] = useState({
     lora_rank: 8,
@@ -100,7 +101,7 @@ export default function FinetunePage() {
       setCheckpointConfig(null);
       return;
     }
-    fetchJson<{ cfg: Record<string, number | string> }>(
+    fetchJson<{ cfg: Record<string, number | string | boolean> }>(
       `/api/checkpoints/${encodeURIComponent(selectedCheckpoint)}`
     )
       .then((data) => setCheckpointConfig(data.cfg))
@@ -451,11 +452,14 @@ export default function FinetunePage() {
             ))}
           </select>
           {checkpointConfig && (
-            <div className="grid-3" style={{ marginTop: 16 }}>
-              <StatCard label="d_model" value={checkpointConfig.d_model || "-"} />
-              <StatCard label="n_layers" value={checkpointConfig.n_layers || "-"} />
-              <StatCard label="n_heads" value={checkpointConfig.n_heads || "-"} />
-            </div>
+            <ModelConfigSummary
+              config={checkpointConfig}
+              summaryItems={[
+                { label: "d_model", value: checkpointConfig.d_model || "-" },
+                { label: "n_layers", value: checkpointConfig.n_layers || "-" },
+                { label: "n_heads", value: checkpointConfig.n_heads || "-" },
+              ]}
+            />
           )}
         </div>
       </section>

@@ -6,7 +6,7 @@ import Heatmap from "../../components/Heatmap";
 import LineChart from "../../components/LineChart";
 import RangeSlider from "../../components/RangeSlider";
 import SideNav from "../../components/SideNav";
-import StatCard from "../../components/StatCard";
+import ModelConfigSummary from "../../components/ModelConfigSummary";
 import { Checkpoint, CodeSnippet, fetchJson } from "../../lib/api";
 import { API_BASE_URL } from "../../lib/env";
 import { useScrollSpy } from "../../lib/useScrollSpy";
@@ -18,7 +18,7 @@ type SessionInfo = {
   session_id: string;
   tokenizer_type: string;
   param_count_m: number;
-  cfg: Record<string, number | string>;
+  cfg: Record<string, number | string | boolean>;
 };
 
 type DiagnosticsMeta = {
@@ -335,34 +335,17 @@ export default function InferencePage() {
           </div>
 
           {session && (
-            <div className="grid-3" style={{ marginTop: 16 }}>
-              <StatCard label="Tokenizer" value={session.tokenizer_type} />
-              <StatCard label="Parameters" value={`${session.param_count_m}M`} />
-              <StatCard label="d_model" value={session.cfg?.d_model || "-"} />
-              <StatCard label="n_layers" value={session.cfg?.n_layers || "-"} />
-              <StatCard label="n_heads" value={session.cfg?.n_heads || "-"} />
-              <StatCard label="n_ctx" value={session.cfg?.n_ctx || "-"} />
-            </div>
-          )}
-          {session && (
-            <div style={{ marginTop: 16 }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Config</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(session.cfg || {}).map(([key, value]) => (
-                    <tr key={key}>
-                      <td>{key}</td>
-                      <td>{String(value)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ModelConfigSummary
+              config={session.cfg}
+              summaryItems={[
+                { label: "Tokenizer", value: session.tokenizer_type },
+                { label: "Parameters", value: `${session.param_count_m}M` },
+                { label: "d_model", value: session.cfg?.d_model || "-" },
+                { label: "n_layers", value: session.cfg?.n_layers || "-" },
+                { label: "n_heads", value: session.cfg?.n_heads || "-" },
+                { label: "n_ctx", value: session.cfg?.n_ctx || "-" },
+              ]}
+            />
           )}
         </div>
       </section>
