@@ -114,6 +114,15 @@ export default function FinetunePage() {
   const ssePath = job ? `/api/finetune/jobs/${job.job_id}/events` : undefined;
   const { lastEvent, error: sseError } = useSse(ssePath, Boolean(job));
   const withTimestamp = (message: string) => `[${formatTimestamp()}] ${message}`;
+  const formatCheckpointTimestamp = (date: Date) => {
+    const year = String(date.getFullYear());
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const seconds = String(date.getSeconds()).padStart(2, "0");
+    return `${year}${month}${day} ${hours}:${minutes}:${seconds}`;
+  };
 
   useEffect(() => {
     if (!lastEvent) {
@@ -187,11 +196,11 @@ export default function FinetunePage() {
   const elapsedDisplay = elapsedTime !== undefined ? formatDuration(elapsedTime) : job ? "Calculating..." : "-";
   const etaDisplay =
     etaSeconds !== undefined && etaSeconds !== null ? formatDuration(etaSeconds) : job ? "Calculating..." : "-";
+  const layersCount = checkpointConfig ? Number(checkpointConfig.n_layers || 0) : 0;
+  const headsCount = checkpointConfig ? Number(checkpointConfig.n_heads || 0) : 0;
   const maxSampleIndex = Math.max(0, trainingParams.batch_size - 1);
   const maxLayerIndex = Math.max(0, layersCount - 1);
   const maxHeadIndex = Math.max(0, headsCount - 1);
-  const layersCount = checkpointConfig ? Number(checkpointConfig.n_layers || 0) : 0;
-  const headsCount = checkpointConfig ? Number(checkpointConfig.n_heads || 0) : 0;
 
   const createJob = async () => {
     setError(null);
@@ -408,7 +417,7 @@ export default function FinetunePage() {
             <option value="">Select checkpoint</option>
             {availableCheckpoints.map((ckpt) => (
               <option key={ckpt.id} value={ckpt.id}>
-                {ckpt.name}
+                {formatCheckpointTimestamp(new Date(ckpt.mtime * 1000))} · {ckpt.name}
               </option>
             ))}
           </select>
