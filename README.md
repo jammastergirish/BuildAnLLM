@@ -32,9 +32,7 @@ I'm incredibly grateful to all those from whom I learned and borrowed ideas (see
 
 ### Getting Started
 
-This project is a **FastAPI + Next.js web application** that provides an interactive interface for training and inference.
-
-The following command will install `uv` and run the app:
+The following command will install `uv` and run the **FastAPI + Next.js** app:
 
 ```bash
 ./run.sh
