@@ -533,6 +533,22 @@ button.secondary:hover {
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
 }
 
+.readme-content {
+  max-width: 80%;
+  width: 100%;
+  margin: 0 auto;
+  line-height: 2.2;
+}
+
+.readme-content p {
+  line-height: 2.6;
+  margin: 0 0 1.8em;
+}
+
+.readme-content li {
+  margin: 0.3em 0;
+}
+
 .log-box {
   background: rgba(7, 7, 9, 0.9);
   color: #f5f5f5;

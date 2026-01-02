@@ -60,15 +60,17 @@ export default async function OverviewPage() {
         </div>
         <div className="card" style={{ padding: 24 }}>
           {readme ? (
-<ReactMarkdown 
-  remarkPlugins={[remarkGfm, remarkMath]} 
-  rehypePlugins={[rehypeKatex]}
-  components={{
-    img: () => null
-  }}
->
-  {readme}
-</ReactMarkdown>
+            <div className="readme-content">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={{
+                  img: () => null,
+                }}
+              >
+                {readme}
+              </ReactMarkdown>
+            </div>
           ) : (
             <p>README.md not found.</p>
           )}
