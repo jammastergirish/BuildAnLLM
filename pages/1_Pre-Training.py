@@ -48,7 +48,7 @@ def _render_quick_stats(model_config, batch_size, lr, epochs):
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Est. Parameters", f"{total_params:.1f}M")
+        st.metric("Parameters", f"{total_params:.1f}M")
     with col2:
         st.metric("Batch Size", batch_size)
     with col3:

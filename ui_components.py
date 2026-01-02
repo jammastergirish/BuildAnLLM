@@ -668,7 +668,7 @@ def render_colored_tokens_rainbow(input_ids, tokenizer) -> str:
         # Rainbow Coloring
         bg_color = rainbow_palette[i % len(rainbow_palette)]
         title_text = f"ID: {token_id}"
-        style = f"background-color: {bg_color}; border-radius: 2px; padding: 0 1px;"
+        style = f"background-color: {bg_color}; border-radius: 5px; padding: 0 1px;"
         html_output += f'<span style="{style}" title="{title_text}">{safe_token}</span>'
         
     return html_output

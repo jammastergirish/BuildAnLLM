@@ -99,7 +99,7 @@ if tool_selection == "Tokenizer":
                 st.metric("Token Count", len(tokens))
             with sub_c2:
                  if len(tokens) > 0:
-                    st.metric("Chars/Token", f"{len(input_text)/len(tokens):.2f}")
+                    st.metric("Characters per Token", f"{len(input_text)/len(tokens):.2f}")
             
             # Raw IDs
             with st.expander("Raw IDs"):

@@ -87,7 +87,7 @@ export default function PlaygroundPage() {
                   <p>{stats.token_count}</p>
                 </div>
                 <div className="stat">
-                  <h4>Chars/Token</h4>
+                  <h4>Characters per Token</h4>
                   <p>{stats.chars_per_token.toFixed(2)}</p>
                 </div>
               </div>

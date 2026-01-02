@@ -23,6 +23,26 @@ import { generateGraphvizArchitecture } from "../../lib/graphviz";
 import { modelEquations } from "../../lib/equations";
 
 const tokenizerOptions = ["character", "bpe-simple", "bpe-tiktoken", "sentencepiece"];
+const presetTokenizerMap: Record<string, string> = {
+  gpt: "bpe-tiktoken",
+  llama: "sentencepiece",
+  olmo: "sentencepiece",
+  deepseek: "sentencepiece",
+  mixtral: "sentencepiece",
+};
+
+const pretrainSections = [
+  { id: "training-data", label: "Training Data" },
+  { id: "architecture", label: "Architecture" },
+  { id: "tokenizer", label: "Tokenizer" },
+  { id: "hyperparameters", label: "Hyperparameters" },
+  { id: "understand-model", label: "Understand" },
+  { id: "train-model", label: "Train" },
+  { id: "live-metrics", label: "Metrics" },
+  { id: "inspect-batch", label: "Inspect batch" },
+  { id: "eval-history", label: "Evaluation history" },
+  { id: "logs", label: "Logs" },
+];
 
 type MetricsPayload = {
   loss?: number;
@@ -65,6 +85,7 @@ export default function PretrainPage() {
   const [snippets, setSnippets] = useState<CodeSnippet[]>([]);
   const [snippetsLoading, setSnippetsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [activeSection, setActiveSection] = useState(pretrainSections[0].id);
   const [error, setError] = useState<string | null>(null);
   const [inspectSample, setInspectSample] = useState(0);
   const [inspectData, setInspectData] = useState<{
@@ -146,6 +167,27 @@ export default function PretrainPage() {
     }
   }, [sseError]);
 
+  useEffect(() => {
+    const elements = pretrainSections
+      .map((section) => document.getElementById(section.id))
+      .filter((element): element is HTMLElement => Boolean(element));
+    if (elements.length === 0) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+          }
+        });
+      },
+      { rootMargin: "-30% 0px -60% 0px" }
+    );
+    elements.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, []);
+
   const estimatedParams = useMemo(
     () => estimateParams({ ...modelConfig, use_einops: useEinops }),
     [modelConfig, useEinops]
@@ -185,8 +227,9 @@ export default function PretrainPage() {
 
   const handlePreset = (preset: string) => {
     setActivePreset(preset);
-    setModelSize(null);
-    setModelConfig((prev) => applyPreset(prev, preset));
+    setModelSize("small");
+    setTokenizerType(presetTokenizerMap[preset] ?? tokenizerType);
+    setModelConfig((prev) => applyPreset(applySizePreset(prev, "small"), preset));
   };
 
   const handleSize = (size: ModelSize) => {
@@ -393,10 +436,27 @@ export default function PretrainPage() {
   }, [attnLayer, attnHead, job, isRunning, inspectData]);
 
   return (
-    <>
-      <section className="section">
+    <div className="page-with-nav">
+      <nav className="side-nav" aria-label="Pretraining sections">
+        <div className="side-nav-title">Jump to</div>
+        <div className="side-nav-links">
+          {pretrainSections.map((section) => (
+            <a
+              key={section.id}
+              href={`#${section.id}`}
+              className={activeSection === section.id ? "active" : ""}
+              aria-current={activeSection === section.id ? "location" : undefined}
+              onClick={() => setActiveSection(section.id)}
+            >
+              {section.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+      <div className="page-content">
+      <section id="training-data" className="section scroll-section">
         <div className="section-title">
-          <h2>Select or Upload Training Data</h2>
+          <h2>Training Data</h2>
           <p>Provide a text file or use a default set of George Orwell's books.</p>
         </div>
         <div className="card">
@@ -408,9 +468,9 @@ export default function PretrainPage() {
         </div>
       </section>
 
-      <section className="section">
+      <section id="architecture" className="section scroll-section">
         <div className="section-title">
-          <h2>Choose Architecture</h2>
+          <h2>Architecture</h2>
           <p>Select a preset and/or go deeper with architecutre settings.</p>
         </div>
         <div className="card">
@@ -465,434 +525,478 @@ export default function PretrainPage() {
             </div>
           </div>
 
-          <div className="grid-3">
-            <div>
-              <label>Positional Encoding</label>
-              <select
-                value={modelConfig.positional_encoding}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    positional_encoding: event.target.value as ModelConfig["positional_encoding"],
-                  }))
-                }
-              >
-                <option value="learned">Learned</option>
-                <option value="rope">RoPE</option>
-                <option value="alibi">ALiBi</option>
-                <option value="none">None</option>
-              </select>
-            </div>
-            <div>
-              <label>Normalization</label>
-              <select
-                value={modelConfig.normalization}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    normalization: event.target.value as ModelConfig["normalization"],
-                  }))
-                }
-              >
-                <option value="layernorm">LayerNorm</option>
-                <option value="rmsnorm">RMSNorm</option>
-              </select>
-            </div>
-            <div>
-              <label>Activation</label>
-              <select
-                value={modelConfig.activation}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    activation: event.target.value as ModelConfig["activation"],
-                  }))
-                }
-              >
-                <option value="gelu">GELU</option>
-                <option value="swiglu">SwiGLU</option>
-              </select>
-            </div>
-            <div>
-              <label>Attention Type</label>
-              <select
-                value={attentionType}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  updateModelConfig((prev) => {
-                    if (next === "mha") {
-                      return { ...prev, n_kv_heads: prev.n_heads };
+          <details className="expander">
+            <summary>Components</summary>
+            <div className="expander-content">
+              <div className="grid-3">
+                <div>
+                  <label>Positional Encoding</label>
+                  <select
+                    value={modelConfig.positional_encoding}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        positional_encoding: event.target.value as ModelConfig["positional_encoding"],
+                      }))
                     }
-                    if (next === "mqa") {
-                      return { ...prev, n_kv_heads: 1 };
+                  >
+                    <option value="learned">Learned</option>
+                    <option value="rope">RoPE</option>
+                    <option value="alibi">ALiBi</option>
+                    <option value="none">None</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Normalization</label>
+                  <select
+                    value={modelConfig.normalization}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        normalization: event.target.value as ModelConfig["normalization"],
+                      }))
                     }
-                    const defaultKv = Math.max(1, Math.floor(prev.n_heads / 4));
-                    return { ...prev, n_kv_heads: defaultKv };
-                  });
-                }}
-              >
-                <option value="mha">Multi-Head (MHA)</option>
-                <option value="gqa">Grouped Query (GQA)</option>
-                <option value="mqa">Multi-Query (MQA)</option>
-              </select>
-            </div>
-            {modelConfig.positional_encoding === "rope" && (
-              <div>
-                <label>RoPE Theta</label>
-              <input
-                type="number"
-                value={modelConfig.rope_theta || 10000}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    rope_theta: Number(event.target.value),
-                  }))
-                }
-              />
+                  >
+                    <option value="layernorm">LayerNorm</option>
+                    <option value="rmsnorm">RMSNorm</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Activation</label>
+                  <select
+                    value={modelConfig.activation}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        activation: event.target.value as ModelConfig["activation"],
+                      }))
+                    }
+                  >
+                    <option value="gelu">GELU</option>
+                    <option value="swiglu">SwiGLU</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Attention Type</label>
+                  <select
+                    value={attentionType}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      updateModelConfig((prev) => {
+                        if (next === "mha") {
+                          return { ...prev, n_kv_heads: prev.n_heads };
+                        }
+                        if (next === "mqa") {
+                          return { ...prev, n_kv_heads: 1 };
+                        }
+                        const defaultKv = Math.max(1, Math.floor(prev.n_heads / 4));
+                        return { ...prev, n_kv_heads: defaultKv };
+                      });
+                    }}
+                  >
+                    <option value="mha">Multi-Head (MHA)</option>
+                    <option value="gqa">Grouped Query (GQA)</option>
+                    <option value="mqa">Multi-Query (MQA)</option>
+                  </select>
+                </div>
+                {modelConfig.positional_encoding === "rope" && (
+                  <div>
+                    <label>RoPE Theta</label>
+                    <input
+                      type="number"
+                      value={modelConfig.rope_theta || 10000}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          rope_theta: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                <div>
+                  <label>Use Einops</label>
+                  <select
+                    value={useEinops ? "yes" : "no"}
+                    onChange={(event) => {
+                      setUseEinops(event.target.value === "yes");
+                      markConfigManual();
+                    }}
+                  >
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
               </div>
-            )}
-            <div>
-              <label>d_model</label>
-              <input
-                type="number"
-                value={modelConfig.d_model}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    d_model: Number(event.target.value),
-                  }))
-                }
-              />
             </div>
-            <div>
-              <label>n_heads</label>
-              <input
-                type="number"
-                value={modelConfig.n_heads}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    n_heads: Number(event.target.value),
-                  }))
-                }
-              />
-            </div>
-            {attentionType === "gqa" && (
-              <div>
-                <label>n_kv_heads</label>
-              <input
-                type="number"
-                value={modelConfig.n_kv_heads || modelConfig.n_heads}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    n_kv_heads: Number(event.target.value),
-                  }))
-                }
-              />
-              </div>
-            )}
-            <div>
-              <label>n_layers</label>
-              <input
-                type="number"
-                value={modelConfig.n_layers}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    n_layers: Number(event.target.value),
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <label>n_ctx</label>
-              <input
-                type="number"
-                value={modelConfig.n_ctx}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    n_ctx: Number(event.target.value),
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <label>d_head</label>
-              <input
-                type="number"
-                value={modelConfig.d_head}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    d_head: Number(event.target.value),
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <label>d_mlp</label>
-              <input
-                type="number"
-                value={modelConfig.d_mlp}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    d_mlp: Number(event.target.value),
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <label>Use MoE</label>
-              <select
-                value={modelConfig.use_moe ? "yes" : "no"}
-                onChange={(event) =>
-                  updateModelConfig((prev) => ({
-                    ...prev,
-                    use_moe: event.target.value === "yes",
-                  }))
-                }
-              >
-                <option value="no">No</option>
-                <option value="yes">Yes</option>
-              </select>
-            </div>
-            <div>
-              <label>Use Einops</label>
-              <select
-                value={useEinops ? "yes" : "no"}
-                onChange={(event) => {
-                  setUseEinops(event.target.value === "yes");
-                  markConfigManual();
-                }}
-              >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-              </select>
-            </div>
-          </div>
+          </details>
 
-          {modelConfig.use_moe && (
-            <div className="grid-3" style={{ marginTop: 16 }}>
-              <div>
-                <label>Experts</label>
-                <input
-                  type="number"
-                  value={modelConfig.num_experts || 8}
-                  onChange={(event) =>
-                    updateModelConfig((prev) => ({
-                      ...prev,
-                      num_experts: Number(event.target.value),
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label>Experts Per Token</label>
-                <input
-                  type="number"
-                  value={modelConfig.num_experts_per_tok || 2}
-                  onChange={(event) =>
-                    updateModelConfig((prev) => ({
-                      ...prev,
-                      num_experts_per_tok: Number(event.target.value),
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label>Shared Experts</label>
-                <select
-                  value={modelConfig.use_shared_experts ? "yes" : "no"}
-                  onChange={(event) =>
-                    updateModelConfig((prev) => ({
-                      ...prev,
-                      use_shared_experts: event.target.value === "yes",
-                    }))
-                  }
-                >
-                  <option value="no">No</option>
-                  <option value="yes">Yes</option>
-                </select>
-              </div>
-              <div>
-                <label>Shared Expert Count</label>
-                <input
-                  type="number"
-                  value={modelConfig.num_shared_experts || 2}
-                  onChange={(event) =>
-                    updateModelConfig((prev) => ({
-                      ...prev,
-                      num_shared_experts: Number(event.target.value),
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label>Router Type</label>
-                <select
-                  value={modelConfig.router_type || "top_k"}
-                  onChange={(event) =>
-                    updateModelConfig((prev) => ({
-                      ...prev,
-                      router_type: event.target.value as ModelConfig["router_type"],
-                    }))
-                  }
-                >
-                  <option value="top_k">top_k</option>
-                  <option value="top_k_with_shared">top_k_with_shared</option>
-                </select>
-              </div>
-              <div>
-                <label>Load Balance Weight</label>
-                <input
-                  type="number"
-                  step="0.001"
-                  value={modelConfig.load_balancing_loss_weight || 0.01}
-                  onChange={(event) =>
-                    updateModelConfig((prev) => ({
-                      ...prev,
-                      load_balancing_loss_weight: Number(event.target.value),
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <label>Expert Capacity Factor</label>
-                <input
-                  type="number"
-                  step="0.05"
-                  value={modelConfig.expert_capacity_factor || 1.25}
-                  onChange={(event) =>
-                    updateModelConfig((prev) => ({
-                      ...prev,
-                      expert_capacity_factor: Number(event.target.value),
-                    }))
-                  }
-                />
+          <details className="expander">
+            <summary>Dimensions</summary>
+            <div className="expander-content">
+              <div className="grid-3">
+                <div>
+                  <label>d_model</label>
+                  <input
+                    type="number"
+                    value={modelConfig.d_model}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        d_model: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>n_heads</label>
+                  <input
+                    type="number"
+                    value={modelConfig.n_heads}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        n_heads: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </div>
+                {attentionType === "gqa" && (
+                  <div>
+                    <label>n_kv_heads</label>
+                    <input
+                      type="number"
+                      value={modelConfig.n_kv_heads || modelConfig.n_heads}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          n_kv_heads: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                <div>
+                  <label>n_layers</label>
+                  <input
+                    type="number"
+                    value={modelConfig.n_layers}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        n_layers: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>n_ctx</label>
+                  <input
+                    type="number"
+                    value={modelConfig.n_ctx}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        n_ctx: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>d_head</label>
+                  <input
+                    type="number"
+                    value={modelConfig.d_head}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        d_head: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>d_mlp</label>
+                  <input
+                    type="number"
+                    value={modelConfig.d_mlp}
+                    onChange={(event) =>
+                      updateModelConfig((prev) => ({
+                        ...prev,
+                        d_mlp: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </div>
               </div>
             </div>
-          )}
+          </details>
+
+          <details className="expander">
+            <summary>Mixture of Experts</summary>
+            <div className="expander-content">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={Boolean(modelConfig.use_moe)}
+                  onChange={(event) =>
+                    updateModelConfig((prev) => ({
+                      ...prev,
+                      use_moe: event.target.checked,
+                    }))
+                  }
+                />
+                <span className="checkbox-box" aria-hidden="true" />
+                <span className="checkbox-text">Use Mixture of Experts</span>
+              </label>
+              {modelConfig.use_moe && (
+                <div className="grid-3" style={{ marginTop: 16 }}>
+                  <div>
+                    <label>Experts</label>
+                    <input
+                      type="number"
+                      value={modelConfig.num_experts || 8}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          num_experts: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label>Experts Per Token</label>
+                    <input
+                      type="number"
+                      value={modelConfig.num_experts_per_tok || 2}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          num_experts_per_tok: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label>Shared Experts</label>
+                    <select
+                      value={modelConfig.use_shared_experts ? "yes" : "no"}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          use_shared_experts: event.target.value === "yes",
+                        }))
+                      }
+                    >
+                      <option value="no">No</option>
+                      <option value="yes">Yes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Shared Expert Count</label>
+                    <input
+                      type="number"
+                      value={modelConfig.num_shared_experts || 2}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          num_shared_experts: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label>Router Type</label>
+                    <select
+                      value={modelConfig.router_type || "top_k"}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          router_type: event.target.value as ModelConfig["router_type"],
+                        }))
+                      }
+                    >
+                      <option value="top_k">top_k</option>
+                      <option value="top_k_with_shared">top_k_with_shared</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Load Balance Weight</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={modelConfig.load_balancing_loss_weight || 0.01}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          load_balancing_loss_weight: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label>Expert Capacity Factor</label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      value={modelConfig.expert_capacity_factor || 1.25}
+                      onChange={(event) =>
+                        updateModelConfig((prev) => ({
+                          ...prev,
+                          expert_capacity_factor: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </details>
 
           <div className="grid-3" style={{ marginTop: 16 }}>
-            <StatCard label="Est. Parameters" value={`${estimatedParams.toFixed(1)}M`} />
+            <StatCard label="Parameters" value={`${estimatedParams.toFixed(1)}M`} />
             <StatCard label="Batch Size" value={trainingParams.batch_size} />
             <StatCard label="Learning Rate" value={trainingParams.learning_rate} />
           </div>
         </div>
       </section>
 
-      <section className="section">
+      <section id="tokenizer" className="section scroll-section">
         <div className="section-title">
-          <h2>Choose Tokenizer</h2>
+          <h2>Tokenizer</h2>
           <p>Choose how input text is tokenized.</p>
         </div>
         <div className="card">
-          <select value={tokenizerType} onChange={(event) => setTokenizerType(event.target.value)}>
+          <div className="inline-row">
             {tokenizerOptions.map((option) => (
-              <option key={option} value={option}>
+              <button
+                key={option}
+                type="button"
+                className={tokenizerType === option ? "primary" : "secondary"}
+                aria-pressed={tokenizerType === option}
+                onClick={() => setTokenizerType(option)}
+              >
                 {option}
-              </option>
+              </button>
             ))}
-          </select>
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="section-title">
-          <h2>Choose Hyperparameters</h2>
-          <p>Decide on core settings for training.</p>
-        </div>
-        <div className="card">
-          <div className="grid-3">
-            <div>
-              <label>Batch Size</label>
-              <input
-                type="number"
-                value={trainingParams.batch_size}
-                onChange={(event) =>
-                  setTrainingParams((prev) => ({ ...prev, batch_size: Number(event.target.value) }))
-                }
-              />
-            </div>
-            <div>
-              <label>Epochs</label>
-              <input
-                type="number"
-                value={trainingParams.epochs}
-                onChange={(event) =>
-                  setTrainingParams((prev) => ({ ...prev, epochs: Number(event.target.value) }))
-                }
-              />
-            </div>
-            <div>
-              <label>Max Steps/Epoch</label>
-              <input
-                type="number"
-                value={trainingParams.max_steps_per_epoch}
-                onChange={(event) =>
-                  setTrainingParams((prev) => ({ ...prev, max_steps_per_epoch: Number(event.target.value) }))
-                }
-              />
-            </div>
-            <div>
-              <label>Learning Rate</label>
-              <input
-                type="number"
-                step="0.0001"
-                value={trainingParams.learning_rate}
-                onChange={(event) =>
-                  setTrainingParams((prev) => ({ ...prev, learning_rate: Number(event.target.value) }))
-                }
-              />
-            </div>
-            <div>
-              <label>Weight Decay</label>
-              <input
-                type="number"
-                step="0.0001"
-                value={trainingParams.weight_decay}
-                onChange={(event) =>
-                  setTrainingParams((prev) => ({ ...prev, weight_decay: Number(event.target.value) }))
-                }
-              />
-            </div>
-            <div>
-              <label>Eval Interval</label>
-              <input
-                type="number"
-                value={trainingParams.eval_interval}
-                onChange={(event) =>
-                  setTrainingParams((prev) => ({ ...prev, eval_interval: Number(event.target.value) }))
-                }
-              />
-            </div>
-            <div>
-              <label>Save Interval</label>
-              <input
-                type="number"
-                value={trainingParams.save_interval}
-                onChange={(event) =>
-                  setTrainingParams((prev) => ({ ...prev, save_interval: Number(event.target.value) }))
-                }
-              />
-            </div>
-            <div>
-              <label>Auto Start</label>
-              <select value={autoStart ? "yes" : "no"} onChange={(event) => setAutoStart(event.target.value === "yes")}>
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-              </select>
-            </div>
           </div>
         </div>
       </section>
 
-      <section className="section">
+      <section id="hyperparameters" className="section scroll-section">
         <div className="section-title">
-          <h2>Understand Model</h2>
+          <h2>Hyperparameters</h2>
+          <p>Decide on core settings for training.</p>
+        </div>
+        <div className="card">
+          <details className="expander">
+            <summary>Core</summary>
+            <div className="expander-content">
+              <div className="grid-3">
+                <div>
+                  <label>Batch Size</label>
+                  <input
+                    type="number"
+                    value={trainingParams.batch_size}
+                    onChange={(event) =>
+                      setTrainingParams((prev) => ({ ...prev, batch_size: Number(event.target.value) }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>Epochs</label>
+                  <input
+                    type="number"
+                    value={trainingParams.epochs}
+                    onChange={(event) =>
+                      setTrainingParams((prev) => ({ ...prev, epochs: Number(event.target.value) }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>Max Steps/Epoch</label>
+                  <input
+                    type="number"
+                    value={trainingParams.max_steps_per_epoch}
+                    onChange={(event) =>
+                      setTrainingParams((prev) => ({ ...prev, max_steps_per_epoch: Number(event.target.value) }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details className="expander">
+            <summary>Optimization</summary>
+            <div className="expander-content">
+              <div className="grid-3">
+                <div>
+                  <label>Learning Rate</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={trainingParams.learning_rate}
+                    onChange={(event) =>
+                      setTrainingParams((prev) => ({ ...prev, learning_rate: Number(event.target.value) }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>Weight Decay</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={trainingParams.weight_decay}
+                    onChange={(event) =>
+                      setTrainingParams((prev) => ({ ...prev, weight_decay: Number(event.target.value) }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details className="expander">
+            <summary>Evaluation & Checkpointing</summary>
+            <div className="expander-content">
+              <div className="grid-3">
+                <div>
+                  <label>Eval Interval</label>
+                  <input
+                    type="number"
+                    value={trainingParams.eval_interval}
+                    onChange={(event) =>
+                      setTrainingParams((prev) => ({ ...prev, eval_interval: Number(event.target.value) }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>Save Interval</label>
+                  <input
+                    type="number"
+                    value={trainingParams.save_interval}
+                    onChange={(event) =>
+                      setTrainingParams((prev) => ({ ...prev, save_interval: Number(event.target.value) }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label>Auto Start</label>
+                  <select value={autoStart ? "yes" : "no"} onChange={(event) => setAutoStart(event.target.value === "yes")}>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section id="understand-model" className="section scroll-section">
+        <div className="section-title">
+          <h2>Understand</h2>
           <p>Better understand the model architecture, code, and math.</p>
         </div>
         <div className="card">
@@ -923,9 +1027,9 @@ export default function PretrainPage() {
         </div>
       </section>
 
-      <section className="section">
+      <section id="train-model" className="section scroll-section">
         <div className="section-title">
-          <h2>Train Model</h2>
+          <h2>Train</h2>
           <p>Train your model.</p>
         </div>
         <div className="card">
@@ -964,9 +1068,9 @@ export default function PretrainPage() {
         </div>
       </section>
 
-      <section className="section">
+      <section id="live-metrics" className="section scroll-section">
         <div className="section-title">
-          <h2>Live Metrics</h2>
+          <h2>Metrics</h2>
           <p>Training loss and evaluation checkpoints.</p>
         </div>
         <div className="card">
@@ -999,7 +1103,7 @@ export default function PretrainPage() {
         </div>
       </section>
 
-      <section className="section">
+      <section id="inspect-batch" className="section scroll-section">
         <div className="section-title">
           <h2>Inspect Batch</h2>
           <p>Peek at tokens, next-token predictions, and attention.</p>
@@ -1099,9 +1203,9 @@ export default function PretrainPage() {
         </div>
       </section>
 
-      <section className="section">
+      <section id="eval-history" className="section scroll-section">
         <div className="section-title">
-          <h2>Eval History</h2>
+          <h2>Evaluation</h2>
           <p>Train and validation losses recorded at eval intervals.</p>
         </div>
         <div className="card">
@@ -1120,7 +1224,7 @@ export default function PretrainPage() {
         </div>
       </section>
 
-      <section className="section">
+      <section id="logs" className="section scroll-section">
         <div className="section-title">
           <h2>Logs</h2>
           {/* <p>Checkpoint and status events.</p> */}
@@ -1131,7 +1235,7 @@ export default function PretrainPage() {
           </div>
         </div>
       </section>
-
-    </>
+      </div>
+    </div>
   );
 }
