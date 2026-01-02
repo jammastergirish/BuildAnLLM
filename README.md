@@ -2,6 +2,7 @@
 
 <img width="1105" height="745" alt="Screenshot 2026-01-01 at 21 41 52" src="https://github.com/user-attachments/assets/ae1cd895-86af-4c0b-b205-71ee06f6fefd" />
 
+
 This repository contains an educational training workflow for a transformer-based autoregressive, decoder-only language model. It is optimized not for speed or cost, but rather for learning.
 
 Users can:
@@ -14,14 +15,6 @@ Users can:
 I built this as I wanted to properly understand LLMs. A great way to learn is to write code yourself; an even better way to learn is to write code in a general, modular manner that's clean enough for others to read.
 
 I'm incredibly grateful to all those from whom I learned and borrowed ideas (see [Resources](#resources)). I hope others find this repository helpful!
-
-## Quickstart ##
-
-The following command will install `uv` and run the app:
-
-```bash
-./run.sh
-```
 
 ## Contents
 
@@ -40,6 +33,12 @@ The following command will install `uv` and run the app:
 ### Getting Started
 
 This project is a **FastAPI + Next.js web application** that provides an interactive interface for training and inference.
+
+The following command will install `uv` and run the app:
+
+```bash
+./run.sh
+```
 
 The app will open in your browser with the following pages:
 - **Overview**: System details and this README
