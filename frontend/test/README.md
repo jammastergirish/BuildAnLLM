@@ -23,8 +23,19 @@ npm run test
 - `frontend/test/*.test.ts` for lib + hook tests
 - `frontend/test/components/*.test.tsx` for React component tests
 - `frontend/test/pages/*.test.tsx` for page-level behavior tests
+- `frontend/e2e/*.spec.ts` for Playwright smoke tests
 
 ## Notes
 
 - Tests run against JSDOM with mocked browser APIs where needed (EventSource, IntersectionObserver).
-- E2E/browser tests are not configured yet.
+- Playwright smoke tests run against a local Next dev server with mocked backend API responses.
+
+## Playwright (Smoke Tests)
+
+```bash
+# One-time browser install
+npx playwright install
+
+# Run smoke tests
+npm run test:e2e
+```

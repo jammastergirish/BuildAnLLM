@@ -9,11 +9,15 @@ import StatCard from "../components/StatCard";
 import { API_BASE_URL } from "../lib/env";
 
 async function getSystemInfo() {
-  const res = await fetch(`${API_BASE_URL}/api/system/info`, { cache: "no-store" });
-  if (!res.ok) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/system/info`, { cache: "no-store" });
+    if (!res.ok) {
+      return null;
+    }
+    return res.json();
+  } catch {
     return null;
   }
-  return res.json();
 }
 
 function loadReadme(): string {

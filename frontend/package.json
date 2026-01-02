@@ -9,11 +9,12 @@
     "lint": "next lint",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:watch": "vitest --watch"
+    "test:watch": "vitest --watch",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
-    "clsx": "^2.1.1",
     "@viz-js/viz": "^3.4.0",
+    "clsx": "^2.1.1",
     "katex": "^0.16.11",
     "next": "14.2.5",
     "react": "18.2.0",
@@ -25,12 +26,13 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.14.10",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
+    "@playwright/test": "^1.57.0",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^14.2.1",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
     "fast-check": "^3.18.0",
     "jsdom": "^24.1.0",
     "typescript": "^5.5.4",
