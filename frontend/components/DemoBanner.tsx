@@ -20,7 +20,7 @@ export default function DemoBanner() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              This public demo has limited functionality.<br/>Run locally in order to train and infer.
+              This public demo has limited functionality.<br/>Run locally for training and inference.
             </a>
           </p>
         </div>
