@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 
 import PretrainPage from "../../app/pretrain/page";
 import { fetchJson } from "../../lib/api";
+import { useDemoMode } from "../../lib/demo";
 
 vi.mock("../../lib/useSse", () => ({
   useSse: () => ({ lastEvent: null, error: null }),
@@ -39,11 +40,21 @@ vi.mock("../../lib/api", async () => {
   };
 });
 
+vi.mock("../../lib/demo", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/demo")>("../../lib/demo");
+  return {
+    ...actual,
+    useDemoMode: vi.fn(),
+  };
+});
+
 const fetchJsonMock = vi.mocked(fetchJson);
+const useDemoModeMock = vi.mocked(useDemoMode);
 
 describe("PretrainPage", () => {
   beforeEach(() => {
     fetchJsonMock.mockReset();
+    useDemoModeMock.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -107,5 +118,21 @@ describe("PretrainPage", () => {
     const payload = JSON.parse(String(form.get("payload")));
     expect(payload.tokenizer_type).toBe("bpe-tiktoken");
     expect(payload.use_einops).toBe(true);
+  });
+
+  it("disables training controls in demo mode", () => {
+    useDemoModeMock.mockReturnValue(true);
+    fetchJsonMock.mockImplementation(async (path) => {
+      if (path === "/api/docs/model-code") {
+        return { snippets: [] };
+      }
+      return {};
+    });
+
+    render(<PretrainPage />);
+
+    expect(screen.getByRole("button", { name: "Start Training" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Step" })).toBeDisabled();
+    expect(screen.getByText("Demo mode: pre-training disabled.")).toBeInTheDocument();
   });
 });

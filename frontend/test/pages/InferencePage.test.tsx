@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import InferencePage from "../../app/inference/page";
 import { fetchJson } from "../../lib/api";
+import { useDemoMode } from "../../lib/demo";
 
 vi.mock("../../lib/useScrollSpy", () => ({
   useScrollSpy: () => ({ activeSection: "", setActiveSection: vi.fn() }),
@@ -31,11 +32,21 @@ vi.mock("../../lib/api", async () => {
   };
 });
 
+vi.mock("../../lib/demo", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/demo")>("../../lib/demo");
+  return {
+    ...actual,
+    useDemoMode: vi.fn(),
+  };
+});
+
 const fetchJsonMock = vi.mocked(fetchJson);
+const useDemoModeMock = vi.mocked(useDemoMode);
 
 describe("InferencePage", () => {
   beforeEach(() => {
     fetchJsonMock.mockReset();
+    useDemoModeMock.mockReturnValue(false);
   });
 
   it("loads session and diagnostics data", async () => {
@@ -159,5 +170,25 @@ describe("InferencePage", () => {
       expect(output).toBeDefined();
       expect((output as HTMLTextAreaElement).value).toContain("X");
     });
+  });
+
+  it("disables generation controls in demo mode", async () => {
+    useDemoModeMock.mockReturnValue(true);
+    fetchJsonMock.mockImplementation(async (path) => {
+      if (path === "/api/checkpoints") {
+        return { checkpoints: [] };
+      }
+      if (path === "/api/docs/inference-code") {
+        return { snippets: [] };
+      }
+      return {};
+    });
+
+    render(<InferencePage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
+    });
+    expect(screen.getByText("Demo mode: inference disabled.")).toBeInTheDocument();
   });
 });

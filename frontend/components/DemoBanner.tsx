@@ -20,7 +20,7 @@ export default function DemoBanner() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              This public demo disables key features.<br/>Clone the repo to access them.
+              This public demo has limited functionality.<br/>Clone the repo to train and infer.
             </a>
           </p>
         </div>

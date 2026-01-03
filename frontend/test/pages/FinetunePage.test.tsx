@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 
 import FinetunePage from "../../app/finetune/page";
 import { fetchJson } from "../../lib/api";
+import { useDemoMode } from "../../lib/demo";
 
 vi.mock("../../lib/useSse", () => ({
   useSse: () => ({ lastEvent: null, error: null }),
@@ -31,7 +32,16 @@ vi.mock("../../lib/api", async () => {
   };
 });
 
+vi.mock("../../lib/demo", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/demo")>("../../lib/demo");
+  return {
+    ...actual,
+    useDemoMode: vi.fn(),
+  };
+});
+
 const fetchJsonMock = vi.mocked(fetchJson);
+const useDemoModeMock = vi.mocked(useDemoMode);
 
 class MockFileReader {
   result: string | ArrayBuffer | null = null;
@@ -46,6 +56,7 @@ describe("FinetunePage", () => {
   beforeEach(() => {
     fetchJsonMock.mockReset();
     vi.stubGlobal("FileReader", MockFileReader);
+    useDemoModeMock.mockReturnValue(false);
   });
 
   it("loads checkpoints and selects the latest non-finetuned", async () => {
@@ -174,5 +185,24 @@ describe("FinetunePage", () => {
     const payload = JSON.parse(String(form.get("payload")));
     expect(payload.use_lora).toBe(true);
     expect(payload.lora_rank).toBe(8);
+  });
+
+  it("disables training controls in demo mode", () => {
+    useDemoModeMock.mockReturnValue(true);
+    fetchJsonMock.mockImplementation(async (path) => {
+      if (path === "/api/checkpoints") {
+        return { checkpoints: [] };
+      }
+      if (path === "/api/docs/finetuning-code") {
+        return { snippets: [] };
+      }
+      return {};
+    });
+
+    render(<FinetunePage />);
+
+    expect(screen.getByRole("button", { name: "Start Fine-Tuning" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Step" })).toBeDisabled();
+    expect(screen.getByText("Demo mode: fine-tuning disabled.")).toBeInTheDocument();
   });
 });
