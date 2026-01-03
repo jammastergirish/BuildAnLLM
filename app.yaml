@@ -1,0 +1,7 @@
+runtime: python311
+instance_class: F2
+
+entrypoint: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+
+env_variables:
+  DEMO_MODE: "true"

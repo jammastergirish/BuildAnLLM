@@ -13,6 +13,7 @@ import { useScrollSpy } from "../../lib/useScrollSpy";
 import { formatCheckpointTimestamp } from "../../lib/time";
 import MarkdownBlock from "../../components/MarkdownBlock";
 import { inferenceEquations } from "../../lib/equations";
+import { useDemoMode } from "../../lib/demo";
 
 type SessionInfo = {
   session_id: string;
@@ -36,6 +37,8 @@ const inferenceSections = [
 ];
 
 export default function InferencePage() {
+  const isDemo = useDemoMode();
+  const [demoReady, setDemoReady] = useState(false);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<string>("");
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -63,6 +66,10 @@ export default function InferencePage() {
   const generatedCount = Math.max(0, generatedText.length - prompt.length);
 
   useEffect(() => {
+    setDemoReady(true);
+  }, []);
+
+  useEffect(() => {
     fetchJson<{ checkpoints: Checkpoint[] }>("/api/checkpoints")
       .then((data) => setCheckpoints(data.checkpoints))
       .catch((err) => setError((err as Error).message));
@@ -87,13 +94,16 @@ export default function InferencePage() {
   }, [sortedCheckpoints, selectedCheckpoint]);
 
   useEffect(() => {
-    if (!selectedCheckpoint) {
+    if (!selectedCheckpoint || isDemo || !demoReady) {
       return;
     }
     loadSession();
-  }, [selectedCheckpoint]);
+  }, [selectedCheckpoint, isDemo, demoReady]);
 
   const loadSession = async () => {
+    if (isDemo) {
+      return;
+    }
     setError(null);
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
@@ -119,7 +129,7 @@ export default function InferencePage() {
   };
 
   const generate = async () => {
-    if (!session) return;
+    if (!session || isDemo) return;
     setError(null);
     streamAbortRef.current?.abort();
     const controller = new AbortController();
@@ -214,7 +224,7 @@ export default function InferencePage() {
   };
 
   const runDiagnostics = useCallback(async () => {
-    if (!session) return;
+    if (!session || isDemo) return;
     setError(null);
     setIsDiagnosticsLoading(true);
     try {
@@ -235,7 +245,7 @@ export default function InferencePage() {
     } finally {
       setIsDiagnosticsLoading(false);
     }
-  }, [prompt, session]);
+  }, [prompt, session, isDemo]);
 
   useEffect(() => {
     if (!diagnostics) return;
@@ -280,14 +290,14 @@ export default function InferencePage() {
   const maxHeadIndex = Math.max(0, headsCount - 1);
 
   useEffect(() => {
-    if (!session) {
+    if (!session || isDemo) {
       return;
     }
     const timeout = setTimeout(() => {
       runDiagnostics();
     }, 400);
     return () => clearTimeout(timeout);
-  }, [prompt, runDiagnostics, session]);
+  }, [prompt, runDiagnostics, session, isDemo]);
 
   useEffect(() => {
     let active = true;
@@ -321,7 +331,11 @@ export default function InferencePage() {
         </div>
         <div className="card">
           <div className="inline-row" style={{ alignItems: "center" }}>
-            <select value={selectedCheckpoint} onChange={(event) => setSelectedCheckpoint(event.target.value)}>
+            <select
+              value={selectedCheckpoint}
+              onChange={(event) => setSelectedCheckpoint(event.target.value)}
+              disabled={isDemo}
+            >
               <option value="">Select checkpoint</option>
               {sortedCheckpoints.map((ckpt) => (
                 <option key={ckpt.id} value={ckpt.id}>
@@ -347,7 +361,7 @@ export default function InferencePage() {
         </div>
       </section>
 
-      <section id="generation-settings" className="section scroll-section">
+        <section id="generation-settings" className="section scroll-section">
         <div className="section-title">
           <h2>Generation Settings</h2>
           <p>Sampling controls for text generation.</p>
@@ -382,10 +396,15 @@ export default function InferencePage() {
             </div>
           </div>
           <div className="inline-row" style={{ marginTop: 12 }}>
-            <button className="primary" onClick={generate} disabled={!session || isGenerating}>
+            <button
+              className="primary"
+              onClick={generate}
+              disabled={!session || isGenerating || isDemo}
+            >
               {isGenerating ? "Generating..." : "Generate"}
             </button>
           </div>
+          {isDemo && <p className="badge demo-badge">Demo mode: inference disabled.</p>}
           {error && <p style={{ color: "#b42318" }}>{error}</p>}
         </div>
       </section>

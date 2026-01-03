@@ -16,6 +16,7 @@ import { fetchJson, makeFormData, CodeSnippet, JobStatus } from "../../lib/api";
 import { useSse } from "../../lib/useSse";
 import { useScrollSpy } from "../../lib/useScrollSpy";
 import { formatDuration, formatTimestamp } from "../../lib/time";
+import { useDemoMode } from "../../lib/demo";
 import {
   defaultModelConfig,
   applyPreset,
@@ -65,6 +66,7 @@ type AxisDomainValue = number | "dataMax";
 type AxisDomain = [AxisDomainValue, AxisDomainValue];
 
 export default function PretrainPage() {
+  const isDemo = useDemoMode();
   const [modelConfig, setModelConfig] = useState<ModelConfig>(defaultModelConfig);
   const [modelSize, setModelSize] = useState<ModelSize | null>("small");
   const [activePreset, setActivePreset] = useState<string | null>("gpt");
@@ -115,10 +117,8 @@ export default function PretrainPage() {
       return;
     }
     if (lastEvent.type === "status") {
-      setJob((prev) => ({
-        ...(prev || {}),
-        ...(lastEvent.payload as Record<string, unknown>),
-      }));
+      const payload = lastEvent.payload as JobStatus;
+      setJob((prev) => (prev ? { ...prev, ...payload } : payload));
     }
     if (lastEvent.type === "metrics") {
       const payload = lastEvent.payload as MetricsPayload;
@@ -151,15 +151,14 @@ export default function PretrainPage() {
     }
     if (lastEvent.type === "log") {
       const payload = lastEvent.payload as { message?: string };
-      if (payload?.message) {
-        setLogs((prev) => [withTimestamp(payload.message), ...prev].slice(0, 200));
+      const message = payload?.message;
+      if (message) {
+        setLogs((prev) => [withTimestamp(message), ...prev].slice(0, 200));
       }
     }
     if (lastEvent.type === "done") {
-      setJob((prev) => ({
-        ...(prev || {}),
-        ...(lastEvent.payload as Record<string, unknown>),
-      }));
+      const payload = lastEvent.payload as JobStatus;
+      setJob((prev) => (prev ? { ...prev, ...payload } : payload));
     }
     if (lastEvent.type === "error") {
       const payload = lastEvent.payload as { message?: string };
@@ -1013,6 +1012,8 @@ export default function PretrainPage() {
           isRunning={isRunning}
           isPaused={isPaused}
           isCreating={isCreating}
+          disabled={isDemo}
+          disabledReason={isDemo ? "Demo mode: pre-training disabled." : undefined}
           progress={progress}
           startLabel="Start Training"
           error={error}

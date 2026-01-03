@@ -14,6 +14,10 @@
   --chart-axis: rgba(255, 255, 255, 0.28);
   --chart-text: rgba(255, 255, 255, 0.7);
   --tooltip-bg: rgba(7, 7, 9, 0.95);
+  --demo-accent-text: #0b0b0c;
+  --demo-accent-border: var(--accent-2);
+  --demo-accent-bg: var(--accent);
+  --demo-accent-shadow: 0 18px 36px rgba(249, 115, 22, 0.3);
 }
 
 * {
@@ -62,6 +66,7 @@ header.site-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   padding: 24px 32px;
   border-bottom: 1px solid var(--stroke-strong);
   background: rgba(5, 5, 6, 0.9);
@@ -168,6 +173,83 @@ nav.primary a:hover {
   border-radius: 10px;
   border: 1px solid transparent;
   white-space: nowrap;
+}
+
+.demo-banner {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.demo-banner-card {
+  width: 100%;
+  max-width: 360px;
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  padding: 10px 14px;
+  background: rgba(8, 8, 10, 0.9);
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.demo-banner.is-demo .demo-banner-card {
+  border-color: var(--demo-accent-border);
+  background: var(--demo-accent-bg);
+  box-shadow: var(--demo-accent-shadow);
+}
+
+.demo-banner.is-demo .demo-banner-pill {
+  border-color: var(--demo-accent-border);
+  background: var(--demo-accent-bg);
+  color: var(--demo-accent-text);
+}
+
+.demo-banner.is-demo .demo-banner-title,
+.demo-banner.is-demo .demo-banner-text {
+  color: var(--demo-accent-text);
+}
+
+.demo-banner.is-demo .demo-banner-text a {
+  color: var(--demo-accent-text);
+  text-decoration: none;
+}
+
+.demo-banner.is-demo .demo-banner-text a:hover {
+  color: var(--demo-accent-text);
+  text-decoration: underline;
+}
+
+.demo-banner-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-2);
+  font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+.demo-banner-text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-1);
+}
+
+.demo-banner-status {
+  margin-top: 10px;
+}
+
+.demo-banner-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(7, 7, 9, 0.7);
+  font-size: 12px;
+  font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.02em;
 }
 
 .page-with-nav {
@@ -661,6 +743,12 @@ button.secondary:hover {
   letter-spacing: 0.08em;
 }
 
+.badge.demo-badge {
+  border-color: var(--demo-accent-border);
+  background: var(--demo-accent-bg);
+  color: var(--demo-accent-text);
+}
+
 .inspect-target {
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
   font-size: 22px;
@@ -990,6 +1078,17 @@ input[type="range"]:disabled {
   .side-nav a {
     flex: 1 1 140px;
     text-align: center;
+  }
+
+  .demo-banner {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .demo-banner-card {
+    grid-template-columns: 1fr;
+    align-items: start;
+    max-width: 100%;
   }
 }
 

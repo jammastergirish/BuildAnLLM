@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from backend.app.core.demo import block_if_demo
 from backend.app.core.state import inference_registry
 from backend.app.schemas.inference import DiagnosticsRequest, GenerateRequest, InferenceSessionRequest
 from backend.app.services.checkpoints import resolve_checkpoint_path
@@ -23,7 +24,7 @@ from backend.app.services.tokenizers import load_tokenizer_for_checkpoint
 from pretraining.model.model_loader import load_model_from_checkpoint
 from utils import get_device
 
-router = APIRouter(prefix="/api/inference")
+router = APIRouter(prefix="/api/inference", dependencies=[Depends(block_if_demo)])
 
 
 @router.post("/sessions")

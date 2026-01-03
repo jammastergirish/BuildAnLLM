@@ -7,6 +7,8 @@ type TrainingControlsProps = {
   isRunning: boolean;
   isPaused: boolean;
   isCreating?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
   progress: number;
   startLabel: string;
   error?: string | null;
@@ -19,6 +21,8 @@ export default function TrainingControls({
   isRunning,
   isPaused,
   isCreating = false,
+  disabled = false,
+  disabledReason,
   progress,
   startLabel,
   error,
@@ -35,17 +39,21 @@ export default function TrainingControls({
     ? "Resume"
     : "Start New";
 
+  const primaryDisabled = isCreating || disabled;
+  const stepDisabled = disabled || !job || isRunning;
+
   return (
     <div className="card">
       <div className="inline-row" style={{ marginBottom: 12 }}>
-        <button className="primary" onClick={onPrimary} disabled={isCreating}>
+        <button className="primary" onClick={onPrimary} disabled={primaryDisabled}>
           {primaryLabel}
         </button>
-        <button className="secondary" onClick={onStep} disabled={!job || isRunning}>
+        <button className="secondary" onClick={onStep} disabled={stepDisabled}>
           Step
         </button>
       </div>
 
+      {disabled && disabledReason && <p className="badge demo-badge">{disabledReason}</p>}
       {job && (
         <>
           <div className="flex-between" style={{ marginBottom: 8 }}>

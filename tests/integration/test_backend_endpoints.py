@@ -395,3 +395,53 @@ def test_inference_session_flow(api_client: TestClient):
 
     delete_resp = api_client.delete(f"/api/inference/sessions/{session_id}")
     assert delete_resp.status_code == 200
+
+
+@pytest.mark.integration
+def test_demo_mode_blocks_training_and_inference(api_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("DEMO_MODE", "true")
+
+    payload = {
+        "model_config": ModelConfig.gpt_small().to_dict(),
+        "tokenizer_type": "character",
+        "use_einops": True,
+        "training": {
+            "batch_size": 2,
+            "epochs": 1,
+            "max_steps_per_epoch": 2,
+            "learning_rate": 1e-3,
+            "weight_decay": 0.0,
+            "eval_interval": 1,
+            "eval_iters": 1,
+            "save_interval": 10,
+        },
+        "auto_start": False,
+    }
+    response = api_client.post("/api/pretrain/jobs", data={"payload": json.dumps(payload)})
+    assert response.status_code == 403
+    assert response.json()["detail"] == "This endpoint is disabled in demo mode."
+
+    finetune_payload = {
+        "checkpoint_id": "checkpoints/dummy.pt",
+        "max_length": 64,
+        "use_lora": False,
+        "training": {
+            "batch_size": 2,
+            "epochs": 1,
+            "max_steps_per_epoch": 2,
+            "learning_rate": 1e-5,
+            "weight_decay": 0.0,
+            "eval_interval": 1,
+            "eval_iters": 1,
+            "save_interval": 10,
+        },
+        "auto_start": False,
+        "mask_prompt": True,
+    }
+    response = api_client.post("/api/finetune/jobs", data={"payload": json.dumps(finetune_payload)})
+    assert response.status_code == 403
+
+    response = api_client.post("/api/inference/sessions", json={"checkpoint_id": "checkpoints/dummy.pt"})
+    assert response.status_code == 403
+
+    assert api_client.get("/api/health").status_code == 200

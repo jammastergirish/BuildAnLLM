@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
+from backend.app.core.demo import block_if_demo
 from backend.app.core.jobs import TrainingJob
 from backend.app.core.state import job_registry
 from backend.app.schemas.training import AttentionRequest, InspectRequest, JobStatusResponse, JobStepRequest, PretrainJobPayload
@@ -22,7 +23,7 @@ from pretraining.training.training_args import TransformerTrainingArgs
 from pretraining.training.trainer import TransformerTrainer
 from utils import get_device
 
-router = APIRouter(prefix="/api/pretrain")
+router = APIRouter(prefix="/api/pretrain", dependencies=[Depends(block_if_demo)])
 
 
 def _parse_payload(payload: str) -> PretrainJobPayload:

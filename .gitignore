@@ -24,6 +24,7 @@ dist/
 *.zip
 *.tar
 *.tgz
+requirements.txt
 
 # Tooling output
 .cache/

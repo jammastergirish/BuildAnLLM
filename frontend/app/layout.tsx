@@ -2,6 +2,7 @@ import "katex/dist/katex.min.css";
 import "./globals.css";
 import type { ReactNode } from "react";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import DemoBanner from "../components/DemoBanner";
 import Nav from "../components/Nav";
 
 const plexSans = IBM_Plex_Sans({
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             Build an LLM
             <span>From equations to execution</span>
           </div>
+          <DemoBanner />
           <Nav />
         </header>
         <main>{children}</main>

@@ -16,6 +16,7 @@ export default function PlaygroundPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     fetchJson<{ models: string[] }>("/api/tokenizers/tiktoken/models")
       .then((data) => {
         setModels(data.models);

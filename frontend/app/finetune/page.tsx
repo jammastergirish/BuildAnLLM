@@ -17,6 +17,7 @@ import { useScrollSpy } from "../../lib/useScrollSpy";
 import MarkdownBlock from "../../components/MarkdownBlock";
 import { finetuneEquations, loraEquations } from "../../lib/equations";
 import { formatDuration, formatTimestamp, formatCheckpointTimestamp } from "../../lib/time";
+import { useDemoMode } from "../../lib/demo";
 
 type MetricsPayload = {
   loss?: number;
@@ -44,6 +45,7 @@ const finetuneSections = [
 ];
 
 export default function FinetunePage() {
+  const isDemo = useDemoMode();
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<string>("");
   const [checkpointConfig, setCheckpointConfig] = useState<Record<string, number | string | boolean> | null>(null);
@@ -151,10 +153,8 @@ export default function FinetunePage() {
       return;
     }
     if (lastEvent.type === "status") {
-      setJob((prev) => ({
-        ...(prev || {}),
-        ...(lastEvent.payload as Record<string, unknown>),
-      }));
+      const payload = lastEvent.payload as JobStatus;
+      setJob((prev) => (prev ? { ...prev, ...payload } : payload));
     }
     if (lastEvent.type === "metrics") {
       const payload = lastEvent.payload as MetricsPayload;
@@ -187,15 +187,14 @@ export default function FinetunePage() {
     }
     if (lastEvent.type === "log") {
       const payload = lastEvent.payload as { message?: string };
-      if (payload?.message) {
-        setLogs((prev) => [withTimestamp(payload.message), ...prev].slice(0, 200));
+      const message = payload?.message;
+      if (message) {
+        setLogs((prev) => [withTimestamp(message), ...prev].slice(0, 200));
       }
     }
     if (lastEvent.type === "done") {
-      setJob((prev) => ({
-        ...(prev || {}),
-        ...(lastEvent.payload as Record<string, unknown>),
-      }));
+      const payload = lastEvent.payload as JobStatus;
+      setJob((prev) => (prev ? { ...prev, ...payload } : payload));
     }
     if (lastEvent.type === "error") {
       const payload = lastEvent.payload as { message?: string };
@@ -739,6 +738,8 @@ export default function FinetunePage() {
           isRunning={isRunning}
           isPaused={isPaused}
           isCreating={isCreating}
+          disabled={isDemo}
+          disabledReason={isDemo ? "Demo mode: fine-tuning disabled." : undefined}
           progress={progress}
           startLabel="Start Fine-Tuning"
           error={error}

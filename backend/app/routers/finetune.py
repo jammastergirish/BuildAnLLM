@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
+from backend.app.core.demo import block_if_demo
 from backend.app.core.jobs import TrainingJob
 from backend.app.core.state import job_registry
 from backend.app.schemas.training import AttentionRequest, FinetuneJobPayload, InspectRequest, JobStatusResponse, JobStepRequest
@@ -25,7 +26,7 @@ from pretraining.model.model_loader import load_model_from_checkpoint
 from pretraining.model.utils import extend_positional_embeddings
 from utils import get_device
 
-router = APIRouter(prefix="/api/finetune")
+router = APIRouter(prefix="/api/finetune", dependencies=[Depends(block_if_demo)])
 
 
 def _parse_payload(payload: str) -> FinetuneJobPayload:

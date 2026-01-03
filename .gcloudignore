@@ -1,0 +1,23 @@
+# This file specifies files that are *not* uploaded to Google Cloud
+# using gcloud. It follows the same syntax as .gitignore, with the addition of
+# "#!include" directives (which insert the entries of the given .gitignore-style
+# file at that point).
+#
+# For more information, run:
+#   $ gcloud topic gcloudignore
+#
+.gcloudignore
+.git
+.gitignore
+
+#!include:.gitignore
+
+# Include the static export for App Engine (excluded by .gitignore).
+!frontend/out/
+!frontend/out/**
+!requirements.txt
+
+# Extra safety for local-only artifacts not in .gitignore.
+.DS_Store
+.claude/
+app/.next/

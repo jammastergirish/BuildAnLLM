@@ -5,20 +5,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 
-import StatCard from "../components/StatCard";
-import { API_BASE_URL } from "../lib/env";
-
-async function getSystemInfo() {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/system/info`, { cache: "no-store" });
-    if (!res.ok) {
-      return null;
-    }
-    return res.json();
-  } catch {
-    return null;
-  }
-}
+import SystemInfoPanel from "../components/SystemInfoPanel";
 
 function loadReadme(): string {
   const readmePath = path.resolve(process.cwd(), "..", "README.md");
@@ -30,7 +17,6 @@ function loadReadme(): string {
 }
 
 export default async function OverviewPage() {
-  const systemInfo = await getSystemInfo();
   const readme = loadReadme();
 
   return (
@@ -40,21 +26,7 @@ export default async function OverviewPage() {
           <h2>Device</h2>
           {/* <p>Runtime and hardware details reported by the backend.</p> */}
         </div>
-        <div className="card">
-          {systemInfo ? (
-            <div className="grid-3">
-              <StatCard label="CPU" value={systemInfo.cpu} />
-              <StatCard label="RAM" value={`${systemInfo.ram_gb} GB`} />
-              <StatCard label="GPU" value={systemInfo.gpu} />
-              <StatCard label="MPS" value={systemInfo.mps} />
-              <StatCard label="OS" value={systemInfo.os} />
-              <StatCard label="Python" value={systemInfo.python} />
-              <StatCard label="PyTorch" value={systemInfo.torch} />
-            </div>
-          ) : (
-            <p>Unable to load system info.</p>
-          )}
-        </div>
+        <SystemInfoPanel />
       </section>
 
       <section className="section">
