@@ -237,6 +237,16 @@ PRETRAINING_DATA_SOURCES = {
         "language": "English",
         "script": "Latin",
     },
+    "Homer's Iliad": {
+        "filename": "input_data/pretraining/iliad.txt",
+        "language": "Greek",
+        "script": "Greek",
+    },
+    "Isaac Newton's Principia": {
+        "filename": "input_data/pretraining/principia.txt",
+        "language": "Latin",
+        "script": "Latin",
+    },
     "Vyasa's Bhagavad Gita": {
         "filename": "input_data/pretraining/gita.txt",
         "language": "Sanskrit",

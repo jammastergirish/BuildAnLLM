@@ -82,11 +82,13 @@ export default function PretrainPage() {
   const [activePreset, setActivePreset] = useState<string | null>("gpt");
   const [useEinops, setUseEinops] = useState(true);
   const [tokenizerType, setTokenizerType] = useState("bpe-tiktoken");
-  const [trainingFile, setTrainingFile] = useState<File | null>(null);
-  const [uploadedFileStats, setUploadedFileStats] = useState<{ words: number; chars: number } | null>(null);
-  const [includeUploadedFile, setIncludeUploadedFile] = useState(false);
+  const [trainingFiles, setTrainingFiles] = useState<File[]>([]);
+  const [uploadedFilesStats, setUploadedFilesStats] = useState<Map<string, { words: number; chars: number }>>(new Map());
+  const [includedUploadedFiles, setIncludedUploadedFiles] = useState<Set<string>>(new Set());
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [selectedDataSources, setSelectedDataSources] = useState<Set<string>>(new Set());
+  const [sortColumn, setSortColumn] = useState<keyof DataSource | "name" | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [autoStart, setAutoStart] = useState(true);
   const [trainingParams, setTrainingParams] = useState({
     batch_size: 32,
@@ -226,29 +228,42 @@ export default function PretrainPage() {
         chars += source.chars;
       }
     }
-    if (includeUploadedFile && uploadedFileStats) {
-      words += uploadedFileStats.words;
-      chars += uploadedFileStats.chars;
+    for (const fileName of includedUploadedFiles) {
+      const stats = uploadedFilesStats.get(fileName);
+      if (stats) {
+        words += stats.words;
+        chars += stats.chars;
+      }
     }
     return { words, chars };
-  }, [selectedDataSources, dataSources, includeUploadedFile, uploadedFileStats]);
+  }, [selectedDataSources, dataSources, includedUploadedFiles, uploadedFilesStats]);
 
-  // Read uploaded file stats
+  // Read uploaded files stats
   useEffect(() => {
-    if (!trainingFile) {
-      setUploadedFileStats(null);
-      setIncludeUploadedFile(false);
+    if (trainingFiles.length === 0) {
+      setUploadedFilesStats(new Map());
+      setIncludedUploadedFiles(new Set());
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result || "");
-      const chars = text.length;
-      const words = text.split(/\s+/).filter((w) => w.length > 0).length;
-      setUploadedFileStats({ words, chars });
-    };
-    reader.readAsText(trainingFile);
-  }, [trainingFile]);
+    const newStats = new Map<string, { words: number; chars: number }>();
+    let remaining = trainingFiles.length;
+    for (const file of trainingFiles) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || "");
+        const chars = text.length;
+        const words = text.split(/\s+/).filter((w) => w.length > 0).length;
+        newStats.set(file.name, { words, chars });
+        remaining--;
+        if (remaining === 0) {
+          setUploadedFilesStats(new Map(newStats));
+        }
+      };
+      reader.readAsText(file);
+    }
+    // Auto-include newly added files
+    setIncludedUploadedFiles(new Set(trainingFiles.map((f) => f.name)));
+  }, [trainingFiles]);
 
   // Fetch pretraining data sources from API on mount
   useEffect(() => {
@@ -325,7 +340,7 @@ export default function PretrainPage() {
         .filter((f): f is string => Boolean(f));
 
       // Default to orwell if nothing selected and no file uploaded
-      if (trainingTextPaths.length === 0 && !includeUploadedFile) {
+      if (trainingTextPaths.length === 0 && includedUploadedFiles.size === 0) {
         const orwell = dataSources.find((s) => s.name === "George Orwell");
         if (orwell) {
           trainingTextPaths.push(orwell.filename);
@@ -340,8 +355,18 @@ export default function PretrainPage() {
         training_text_paths: trainingTextPaths.length > 0 ? trainingTextPaths : undefined,
         auto_start: autoStart,
       };
-      // Only include uploaded file if the checkbox is checked
-      const fileToUpload = includeUploadedFile && trainingFile ? trainingFile : undefined;
+
+      // Combine all included uploaded files into one blob if any are selected
+      let fileToUpload: File | undefined;
+      const includedFiles = trainingFiles.filter((f) => includedUploadedFiles.has(f.name));
+      if (includedFiles.length > 0) {
+        const texts = await Promise.all(
+          includedFiles.map((f) => f.text())
+        );
+        const combinedText = texts.join("\n\n");
+        fileToUpload = new File([combinedText], "combined_upload.txt", { type: "text/plain" });
+      }
+
       const form = makeFormData(payload, fileToUpload, "training_file");
       const data = await fetchJson<JobStatus>("/api/pretrain/jobs", {
         method: "POST",
@@ -515,16 +540,16 @@ export default function PretrainPage() {
         </div>
         <div className="card">
           <div style={{ marginBottom: 16 }}>
-            <span className="row-label-title" style={{ display: "block", marginBottom: 8 }}>Upload Custom File</span>
+            <span className="row-label-title" style={{ display: "block", marginBottom: 8 }}>Upload Custom Files</span>
             <input
               ref={fileInputRef}
               type="file"
               accept=".txt"
+              multiple
               onChange={(event) => {
-                const file = event.target.files?.[0] || null;
-                setTrainingFile(file);
-                if (file) {
-                  setIncludeUploadedFile(true);
+                const files = Array.from(event.target.files || []);
+                if (files.length > 0) {
+                  setTrainingFiles((prev) => [...prev, ...files]);
                 }
               }}
             />
@@ -536,58 +561,145 @@ export default function PretrainPage() {
               <thead>
                 <tr>
                   <th style={{ width: 28 }}></th>
-                  <th style={{ width: "40%" }}>Author/Text</th>
-                  <th style={{ width: "12%" }}>Language</th>
-                  <th style={{ width: "10%" }}>Script</th>
-                  <th style={{ width: "14%", textAlign: "right" }}>Words</th>
-                  <th style={{ width: "14%", textAlign: "right" }}>Characters</th>
+                  <th
+                    style={{ width: "40%", cursor: "pointer" }}
+                    onClick={() => {
+                      if (sortColumn === "name") {
+                        setSortDir(sortDir === "asc" ? "desc" : "asc");
+                      } else {
+                        setSortColumn("name");
+                        setSortDir("asc");
+                      }
+                    }}
+                  >
+                    Author/Text {sortColumn === "name" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                  </th>
+                  <th
+                    style={{ width: "12%", cursor: "pointer" }}
+                    onClick={() => {
+                      if (sortColumn === "language") {
+                        setSortDir(sortDir === "asc" ? "desc" : "asc");
+                      } else {
+                        setSortColumn("language");
+                        setSortDir("asc");
+                      }
+                    }}
+                  >
+                    Language {sortColumn === "language" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                  </th>
+                  <th
+                    style={{ width: "10%", cursor: "pointer" }}
+                    onClick={() => {
+                      if (sortColumn === "script") {
+                        setSortDir(sortDir === "asc" ? "desc" : "asc");
+                      } else {
+                        setSortColumn("script");
+                        setSortDir("asc");
+                      }
+                    }}
+                  >
+                    Script {sortColumn === "script" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                  </th>
+                  <th
+                    style={{ width: "14%", textAlign: "right", cursor: "pointer" }}
+                    onClick={() => {
+                      if (sortColumn === "words") {
+                        setSortDir(sortDir === "asc" ? "desc" : "asc");
+                      } else {
+                        setSortColumn("words");
+                        setSortDir("desc");
+                      }
+                    }}
+                  >
+                    Words {sortColumn === "words" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                  </th>
+                  <th
+                    style={{ width: "14%", textAlign: "right", cursor: "pointer" }}
+                    onClick={() => {
+                      if (sortColumn === "chars") {
+                        setSortDir(sortDir === "asc" ? "desc" : "asc");
+                      } else {
+                        setSortColumn("chars");
+                        setSortDir("desc");
+                      }
+                    }}
+                  >
+                    Characters {sortColumn === "chars" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {trainingFile && (
-                  <tr>
-                    <td>
-                      <label className="checkbox">
-                        <input
-                          type="checkbox"
-                          checked={includeUploadedFile}
-                          onChange={(event) => setIncludeUploadedFile(event.target.checked)}
-                        />
-                        <span className="checkbox-box" aria-hidden="true" />
-                      </label>
-                    </td>
-                    <td>
-                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {trainingFile.name}
+                {trainingFiles.map((file) => {
+                  const stats = uploadedFilesStats.get(file.name);
+                  return (
+                    <tr key={`uploaded-${file.name}`}>
+                      <td>
+                        <label className="checkbox">
+                          <input
+                            type="checkbox"
+                            checked={includedUploadedFiles.has(file.name)}
+                            onChange={(event) => {
+                              setIncludedUploadedFiles((prev) => {
+                                const next = new Set(prev);
+                                if (event.target.checked) {
+                                  next.add(file.name);
+                                } else {
+                                  next.delete(file.name);
+                                }
+                                return next;
+                              });
+                            }}
+                          />
+                          <span className="checkbox-box" aria-hidden="true" />
+                        </label>
+                      </td>
+                      <td>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            📄 {file.name}
+                          </span>
+                          <button
+                            type="button"
+                            className="secondary"
+                            style={{ padding: "2px 6px", fontSize: "0.75rem", flexShrink: 0 }}
+                            onClick={() => {
+                              setTrainingFiles((prev) => prev.filter((f) => f.name !== file.name));
+                              setIncludedUploadedFiles((prev) => {
+                                const next = new Set(prev);
+                                next.delete(file.name);
+                                return next;
+                              });
+                            }}
+                            title="Remove"
+                          >
+                            ×
+                          </button>
                         </span>
-                        <button
-                          type="button"
-                          className="secondary"
-                          style={{ padding: "2px 6px", fontSize: "0.75rem", flexShrink: 0 }}
-                          onClick={() => {
-                            setTrainingFile(null);
-                            if (fileInputRef.current) {
-                              fileInputRef.current.value = "";
-                            }
-                          }}
-                          title="Remove"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    </td>
-                    <td style={{ opacity: 0.6 }}>—</td>
-                    <td style={{ opacity: 0.6 }}>—</td>
-                    <td style={{ textAlign: "right" }}>
-                      {uploadedFileStats?.words.toLocaleString() ?? "—"}
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      {uploadedFileStats?.chars.toLocaleString() ?? "—"}
-                    </td>
-                  </tr>
-                )}
-                {dataSources.map((source) => (
+                      </td>
+                      <td style={{ opacity: 0.6 }}>—</td>
+                      <td style={{ opacity: 0.6 }}>—</td>
+                      <td style={{ textAlign: "right" }}>
+                        {stats?.words.toLocaleString() ?? "—"}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        {stats?.chars.toLocaleString() ?? "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {[...dataSources]
+                  .sort((a, b) => {
+                    if (!sortColumn) return 0;
+                    const aVal = a[sortColumn];
+                    const bVal = b[sortColumn];
+                    if (typeof aVal === "number" && typeof bVal === "number") {
+                      return sortDir === "asc" ? aVal - bVal : bVal - aVal;
+                    }
+                    return sortDir === "asc"
+                      ? String(aVal).localeCompare(String(bVal))
+                      : String(bVal).localeCompare(String(aVal));
+                  })
+                  .map((source) => (
                   <tr key={source.name}>
                     <td>
                       <label className="checkbox">
@@ -1210,11 +1322,11 @@ export default function PretrainPage() {
           isRunning={isRunning}
           isPaused={isPaused}
           isCreating={isCreating}
-          disabled={isDemo || (!selectedDataSources.size && !includeUploadedFile)}
+          disabled={isDemo || (!selectedDataSources.size && !includedUploadedFiles.size)}
           disabledReason={
             isDemo
               ? "Demo mode: pre-training disabled."
-              : !selectedDataSources.size && !includeUploadedFile
+              : !selectedDataSources.size && !includedUploadedFiles.size
               ? "Select at least one data source in Training Data above."
               : undefined
           }
