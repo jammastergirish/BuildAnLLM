@@ -632,3 +632,76 @@ def test_demo_mode_blocks_training_and_inference(api_client: TestClient, monkeyp
     assert response.status_code == 403
 
     assert api_client.get("/api/health").status_code == 200
+
+
+@pytest.mark.integration
+def test_demo_mode_allows_data_sources_endpoint(api_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """Test that /api/pretrain/data-sources endpoint works in demo mode.
+    
+    This endpoint is read-only and should not be blocked even when demo mode is enabled.
+    It allows users to see available pretraining text corpora without being able to start training.
+    """
+    monkeypatch.setenv("DEMO_MODE", "true")
+
+    # Data sources endpoint should still work in demo mode
+    response = api_client.get("/api/pretrain/data-sources")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert "sources" in data
+    # Should return at least some sources
+    assert isinstance(data["sources"], list)
+
+
+@pytest.mark.integration
+def test_demo_mode_blocks_pretrain_job_operations(api_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """Test that all pretrain job-related endpoints are blocked in demo mode."""
+    monkeypatch.setenv("DEMO_MODE", "true")
+    
+    # Create job should be blocked
+    payload = {
+        "model_config": {"d_model": 64, "n_heads": 2, "n_layers": 2, "n_ctx": 64, "d_head": 32, "d_mlp": 128, "vocab_size": 100},
+        "tokenizer_type": "character",
+        "use_einops": True,
+        "training": {
+            "batch_size": 2,
+            "epochs": 1,
+            "max_steps_per_epoch": 2,
+            "learning_rate": 1e-3,
+            "weight_decay": 0.0,
+            "eval_interval": 1,
+            "eval_iters": 1,
+            "save_interval": 10,
+        },
+        "auto_start": False,
+    }
+    response = api_client.post("/api/pretrain/jobs", data={"payload": json.dumps(payload)})
+    assert response.status_code == 403
+    
+    # Step should be blocked (using fake job_id since we can't create one)
+    response = api_client.post("/api/pretrain/jobs/fake-job-id/step", json={"include_batch": False})
+    assert response.status_code == 403
+    
+    # Inspect should be blocked
+    response = api_client.post("/api/pretrain/jobs/fake-job-id/inspect", json={"sample_index": 0, "max_tokens": 4, "top_k": 3})
+    assert response.status_code == 403
+    
+    # Attention should be blocked
+    response = api_client.post("/api/pretrain/jobs/fake-job-id/attention", json={"sample_index": 0, "layer": 0, "head": 0, "max_tokens": 4})
+    assert response.status_code == 403
+    
+    # Pause should be blocked
+    response = api_client.post("/api/pretrain/jobs/fake-job-id/pause")
+    assert response.status_code == 403
+    
+    # Resume should be blocked
+    response = api_client.post("/api/pretrain/jobs/fake-job-id/resume")
+    assert response.status_code == 403
+    
+    # Cancel should be blocked
+    response = api_client.post("/api/pretrain/jobs/fake-job-id/cancel")
+    assert response.status_code == 403
+    
+    # Events should be blocked
+    response = api_client.get("/api/pretrain/jobs/fake-job-id/events")
+    assert response.status_code == 403
