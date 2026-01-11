@@ -36,9 +36,9 @@ def _parse_payload(payload: str) -> PretrainJobPayload:
 def _read_training_text(upload: Optional[UploadFile]) -> str:
     if upload is not None:
         return upload.file.read().decode("utf-8")
-    training_path = Path("training.txt")
+    training_path = Path("input_data/pretraining/orwell.txt")
     if not training_path.exists():
-        raise HTTPException(status_code=400, detail="training.txt not found")
+        raise HTTPException(status_code=400, detail="Default pretraining text not found")
     return training_path.read_text(encoding="utf-8")
 
 

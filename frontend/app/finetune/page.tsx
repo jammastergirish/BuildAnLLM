@@ -543,7 +543,7 @@ export default function FinetunePage() {
       <section id="training-data" className="section scroll-section">
         <div className="section-title">
           <h2>Training Data</h2>
-          <p>Upload a CSV or fall back to finetuning.csv.</p>
+          <p>Upload a CSV or use the default data.</p>
         </div>
         <div className="card">
           <input

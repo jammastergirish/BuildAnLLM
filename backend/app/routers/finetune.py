@@ -42,9 +42,9 @@ def _prepare_csv(upload: Optional[UploadFile]) -> Path:
         temp.write(upload.file.read())
         temp.close()
         return Path(temp.name)
-    default_path = Path("finetuning.csv")
+    default_path = Path("input_data/finetuning/finetuning.csv")
     if not default_path.exists():
-        raise HTTPException(status_code=400, detail="finetuning.csv not found")
+        raise HTTPException(status_code=400, detail="Default finetuning CSV not found")
     return default_path
 
 

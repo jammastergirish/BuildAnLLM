@@ -56,7 +56,7 @@ The app will open in your browser with the following pages:
 
 #### How To
 
-1. Upload training data or use the default `training.txt` file
+1. Upload training data or use the default pretraining text (`input_data/pretraining/orwell.txt`)
 2. Choose custom parameters or select a preset:
    - **🚀 GPT-2**: Learned positional embeddings, LayerNorm, GELU activation
    - **🦙 LLaMA**: RoPE positional encoding, RMSNorm, SwiGLU activation
@@ -324,7 +324,7 @@ optimizer.step()
 
 ```python
 # Load CSV
-df = pd.read_csv("finetuning.csv")
+df = pd.read_csv("input_data/finetuning/finetuning.csv")
 prompts = df['prompt'].tolist()
 responses = df['response'].tolist()
 

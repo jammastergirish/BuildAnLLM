@@ -20,7 +20,7 @@ def load_tokenizer_for_checkpoint(
     checkpoint_path: Path,
     tokenizer_type: str,
     vocab_size: int,
-    training_text_path: Path = Path("training.txt"),
+    training_text_path: Path = Path("input_data/pretraining/orwell.txt"),
 ):
     if tokenizer_type == "character":
         text = _read_training_text(training_text_path)
