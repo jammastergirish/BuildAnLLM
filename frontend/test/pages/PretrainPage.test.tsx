@@ -283,4 +283,131 @@ describe("PretrainPage", () => {
       expect(screen.getAllByText("5,000").length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe("multi-file upload", () => {
+    beforeEach(() => {
+      fetchJsonMock.mockImplementation(async (path) => {
+        if (path === "/api/pretrain/data-sources") {
+          return { sources: [] };
+        }
+        if (path === "/api/docs/model-code") {
+          return { snippets: [] };
+        }
+        return {};
+      });
+    });
+
+    it("shows file upload input that accepts multiple files", async () => {
+      render(<PretrainPage />);
+
+      // Find file input with multiple attribute
+      const fileInput = document.querySelector('input[type="file"][multiple]');
+      expect(fileInput).toBeInTheDocument();
+      expect(fileInput).toHaveAttribute("accept", ".txt");
+    });
+
+    it("displays uploaded files in the table", async () => {
+      render(<PretrainPage />);
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(fileInput).toBeInTheDocument();
+
+      // Create mock files
+      const file1 = new File(["Hello world content"], "testfile1.txt", { type: "text/plain" });
+      const file2 = new File(["More content here"], "testfile2.txt", { type: "text/plain" });
+
+      // Simulate file upload
+      await act(async () => {
+        Object.defineProperty(fileInput, "files", {
+          value: [file1, file2],
+          writable: false,
+        });
+        fireEvent.change(fileInput);
+      });
+
+      // Wait for files to appear in the table
+      await waitFor(() => {
+        expect(screen.getByText(/testfile1.txt/)).toBeInTheDocument();
+      });
+      expect(screen.getByText(/testfile2.txt/)).toBeInTheDocument();
+    });
+
+    it("uses FormData when starting training job", async () => {
+      // This test verifies that the component uses FormData format for API calls
+      // which is required for file uploads
+      fetchJsonMock.mockImplementation(async (path) => {
+        if (path === "/api/pretrain/data-sources") {
+          return {
+            sources: [
+              { name: "Test Source", filename: "test.txt", language: "English", script: "Latin", words: 100, chars: 500 },
+            ],
+          };
+        }
+        if (path === "/api/pretrain/jobs") {
+          return {
+            job_id: "job-1",
+            kind: "pretrain",
+            status: "paused",
+            iter: 0,
+            max_iters: 10,
+            created_at: 0,
+          };
+        }
+        return { snippets: [] };
+      });
+
+      render(<PretrainPage />);
+
+      // Wait for data sources to load
+      await waitFor(() => {
+        expect(screen.getByText("Test Source")).toBeInTheDocument();
+      });
+
+      // Start training
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Start Training" }));
+      });
+
+      // Wait for API call
+      await waitFor(
+        () => {
+          const calls = fetchJsonMock.mock.calls.filter(
+            ([p]: [string]) => p === "/api/pretrain/jobs"
+          );
+          expect(calls.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
+
+      // Check that FormData was used
+      const call = fetchJsonMock.mock.calls.find(([p]: [string]) => p === "/api/pretrain/jobs");
+      expect(call).toBeDefined();
+      const form = call?.[1]?.body as FormData;
+      expect(form).toBeInstanceOf(FormData);
+    });
+
+    it("shows remove button for uploaded files", async () => {
+      render(<PretrainPage />);
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      const file = new File(["Test content"], "removable.txt", { type: "text/plain" });
+
+      await act(async () => {
+        Object.defineProperty(fileInput, "files", {
+          value: [file],
+          writable: false,
+        });
+        fireEvent.change(fileInput);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/removable.txt/)).toBeInTheDocument();
+      });
+
+      // Find and click remove button (×)
+      const removeButton = screen.getByRole("button", { name: "×" });
+      expect(removeButton).toBeInTheDocument();
+    });
+  });
 });

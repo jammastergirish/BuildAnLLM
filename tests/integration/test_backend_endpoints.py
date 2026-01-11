@@ -302,6 +302,98 @@ def test_pretrain_job_with_training_text_paths(api_client: TestClient):
 
 
 @pytest.mark.integration
+def test_pretrain_job_with_multiple_training_text_paths(api_client: TestClient):
+    """Test creating a pretrain job with multiple training_text_paths for concatenation."""
+    payload = {
+        "model_config": ModelConfig.gpt_small().to_dict(),
+        "tokenizer_type": "character",
+        "use_einops": True,
+        "training": {
+            "batch_size": 2,
+            "epochs": 1,
+            "max_steps_per_epoch": 2,
+            "learning_rate": 1e-3,
+            "weight_decay": 0.0,
+            "eval_interval": 1,
+            "eval_iters": 1,
+            "save_interval": 10,
+        },
+        "training_text_paths": [
+            "input_data/pretraining/orwell.txt",
+            "input_data/pretraining/dickens.txt",
+            "input_data/pretraining/shakespeare.txt",
+        ],
+        "auto_start": False,
+    }
+    response = api_client.post("/api/pretrain/jobs", data={"payload": json.dumps(payload)})
+    assert response.status_code == 200
+    assert "job_id" in response.json()
+
+
+@pytest.mark.integration
+def test_pretrain_job_with_file_upload(api_client: TestClient):
+    """Test creating a pretrain job with an uploaded training file."""
+    payload = {
+        "model_config": ModelConfig.gpt_small().to_dict(),
+        "tokenizer_type": "character",
+        "use_einops": True,
+        "training": {
+            "batch_size": 2,
+            "epochs": 1,
+            "max_steps_per_epoch": 2,
+            "learning_rate": 1e-3,
+            "weight_decay": 0.0,
+            "eval_interval": 1,
+            "eval_iters": 1,
+            "save_interval": 10,
+        },
+        "auto_start": False,
+    }
+    # Create a simple text file for upload
+    file_content = b"This is custom training text from an uploaded file."
+    files = {"training_file": ("custom.txt", file_content, "text/plain")}
+    response = api_client.post(
+        "/api/pretrain/jobs",
+        data={"payload": json.dumps(payload)},
+        files=files,
+    )
+    assert response.status_code == 200
+    assert "job_id" in response.json()
+
+
+@pytest.mark.integration
+def test_pretrain_job_with_upload_and_paths_combined(api_client: TestClient):
+    """Test creating a pretrain job with both uploaded file and training_text_paths."""
+    payload = {
+        "model_config": ModelConfig.gpt_small().to_dict(),
+        "tokenizer_type": "character",
+        "use_einops": True,
+        "training": {
+            "batch_size": 2,
+            "epochs": 1,
+            "max_steps_per_epoch": 2,
+            "learning_rate": 1e-3,
+            "weight_decay": 0.0,
+            "eval_interval": 1,
+            "eval_iters": 1,
+            "save_interval": 10,
+        },
+        "training_text_paths": ["input_data/pretraining/orwell.txt"],
+        "auto_start": False,
+    }
+    # Create uploaded file
+    file_content = b"Additional custom content from uploaded file."
+    files = {"training_file": ("custom.txt", file_content, "text/plain")}
+    response = api_client.post(
+        "/api/pretrain/jobs",
+        data={"payload": json.dumps(payload)},
+        files=files,
+    )
+    assert response.status_code == 200
+    assert "job_id" in response.json()
+
+
+@pytest.mark.integration
 def test_checkpoint_endpoints(api_client: TestClient, monkeypatch: pytest.MonkeyPatch):
     import backend.app.routers.checkpoints as checkpoints
 

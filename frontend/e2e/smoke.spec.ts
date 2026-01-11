@@ -178,7 +178,29 @@ test("pretrain page renders base sections", async ({ page }) => {
   await expect(page.getByRole("button", { name: "GPT-2" })).toBeVisible();
 });
 
+test("pretrain page shows multi-file upload interface", async ({ page }) => {
+  await page.goto("/pretrain");
+
+  // Check file upload section is visible
+  await expect(page.getByText("Upload Custom Files")).toBeVisible();
+
+  // Check file input exists and accepts multiple files
+  const fileInput = page.locator('input[type="file"][multiple]');
+  await expect(fileInput).toBeVisible();
+  await expect(fileInput).toHaveAttribute("accept", ".txt");
+
+  // Check data sources table is visible
+  await expect(page.getByText("Select Sources")).toBeVisible();
+
+  // Check column headers are present
+  await expect(page.getByRole("columnheader", { name: /Author\/Text/ })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: /Language/ })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: /Words/ })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: /Characters/ })).toBeVisible();
+});
+
 test("finetune page loads latest checkpoint", async ({ page }) => {
+
   await page.goto("/finetune");
   const checkpointSelect = page.locator("section#checkpoint select");
   await expect(checkpointSelect).toHaveValue("ckpt-1");
