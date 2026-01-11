@@ -581,7 +581,7 @@ export default function PretrainPage() {
             <table className="data-table" style={{ width: "100%", tableLayout: "fixed" }}>
               <thead>
                 <tr>
-                  <th style={{ width: 28 }}>
+                  <th style={{ width: 28, textAlign: "left" }}>
                     <label className="checkbox" title="Select All / None">
                       <input
                         type="checkbox"
