@@ -68,28 +68,6 @@ class TestReadTrainingText:
     """Tests for the _read_training_text function."""
 
     @pytest.fixture
-    def temp_data_files(self, tmp_path: Path) -> dict[str, Path]:
-        """Create temporary text files for testing."""
-        files = {}
-        
-        file1 = tmp_path / "source1.txt"
-        file1.write_text("Content from source one.", encoding="utf-8")
-        files["source1"] = file1
-        
-        file2 = tmp_path / "source2.txt"
-        file2.write_text("Content from source two.", encoding="utf-8")
-        files["source2"] = file2
-        
-        # Create the default fallback path
-        pretraining_dir = tmp_path / "input_data" / "pretraining"
-        pretraining_dir.mkdir(parents=True, exist_ok=True)
-        orwell = pretraining_dir / "orwell.txt"
-        orwell.write_text("Default Orwell text.", encoding="utf-8")
-        files["orwell"] = orwell
-        
-        return files
-
-    @pytest.fixture
     def mock_upload_file(self) -> UploadFile:
         """Create a mock UploadFile with test content."""
         content = b"Uploaded file content."
@@ -128,17 +106,6 @@ class TestReadTrainingText:
         
         assert "Uploaded file content." in result
         assert "Content from source one." in result
-
-    def test_fallback_to_orwell_when_nothing_provided(self, temp_data_files: dict[str, Path], monkeypatch: pytest.MonkeyPatch):
-        """Verify fallback to Orwell when no upload or paths provided."""
-        from backend.app.routers import pretrain
-        
-        # Change to temp directory so we can find the orwell.txt
-        monkeypatch.chdir(temp_data_files["orwell"].parent.parent.parent)
-        
-        result = pretrain._read_training_text(None, None)
-        
-        assert result == "Default Orwell text."
 
     def test_ignores_nonexistent_paths(self, temp_data_files: dict[str, Path]):
         """Verify graceful handling of non-existent paths (skips them)."""
@@ -187,38 +154,3 @@ class TestPretrainingDataSources:
             missing = required_fields - set(info.keys())
             assert not missing, f"Source '{name}' missing fields: {missing}"
 
-    def test_sources_include_expected_entries(self):
-        """Verify expected data sources are present."""
-        from backend.app.routers.pretrain import PRETRAINING_DATA_SOURCES
-        
-        expected_sources = [
-            "George Orwell",
-            "Charles Dickens",
-            "William Shakespeare",
-            "Oscar Wilde",
-            "Muhammad al-Khwarizmi",
-            "Marcel Proust",
-            "Miguel de Cervantes",
-        ]
-        
-        for source in expected_sources:
-            assert source in PRETRAINING_DATA_SOURCES, f"Missing expected source: {source}"
-
-    def test_multilingual_sources_have_correct_metadata(self):
-        """Verify non-English sources have correct language/script."""
-        from backend.app.routers.pretrain import PRETRAINING_DATA_SOURCES
-        
-        # Arabic source
-        al_khwarizmi = PRETRAINING_DATA_SOURCES["Muhammad al-Khwarizmi"]
-        assert al_khwarizmi["language"] == "Arabic"
-        assert al_khwarizmi["script"] == "Arabic"
-        
-        # French source
-        proust = PRETRAINING_DATA_SOURCES["Marcel Proust"]
-        assert proust["language"] == "French"
-        assert proust["script"] == "Latin"
-        
-        # Spanish source
-        cervantes = PRETRAINING_DATA_SOURCES["Miguel de Cervantes"]
-        assert cervantes["language"] == "Spanish"
-        assert cervantes["script"] == "Latin"

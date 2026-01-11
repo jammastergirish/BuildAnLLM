@@ -295,6 +295,31 @@ export default function FinetunePage() {
     await resumeJob();
   };
 
+  const resetJob = async () => {
+    // Cancel the job if it exists and is running/paused
+    if (job && !["completed", "error", "canceled"].includes(job.status)) {
+      try {
+        await fetchJson(`/api/finetune/jobs/${job.job_id}/cancel`, { method: "POST" });
+      } catch {
+        // Ignore cancel errors - we're resetting anyway
+      }
+    }
+
+    // Reset all training state
+    setJob(null);
+    setMetrics(null);
+    setMetricsHistory([]);
+    setEvalHistory([]);
+    setLogs([]);
+    setInspectData(null);
+    setAttention([]);
+    setError(null);
+    setIsCreating(false);
+    setInspectSample(0);
+    setAttnLayer(0);
+    setAttnHead(0);
+  };
+
   const loadSnippets = async () => {
     setError(null);
     try {
@@ -745,6 +770,7 @@ export default function FinetunePage() {
           error={error}
           onPrimary={handlePrimaryAction}
           onStep={stepJob}
+          onReset={resetJob}
         />
       </section>
 

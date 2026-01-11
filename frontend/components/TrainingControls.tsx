@@ -14,6 +14,7 @@ type TrainingControlsProps = {
   error?: string | null;
   onPrimary: () => void;
   onStep: () => void;
+  onReset?: () => void;
 };
 
 export default function TrainingControls({
@@ -28,6 +29,7 @@ export default function TrainingControls({
   error,
   onPrimary,
   onStep,
+  onReset,
 }: TrainingControlsProps) {
   const primaryLabel = isCreating
     ? "Initializing..."
@@ -41,6 +43,7 @@ export default function TrainingControls({
 
   const primaryDisabled = isCreating || disabled;
   const stepDisabled = disabled || !job || isRunning;
+  const resetDisabled = disabled || !job;
 
   return (
     <div className="card">
@@ -51,6 +54,17 @@ export default function TrainingControls({
         <button className="secondary" onClick={onStep} disabled={stepDisabled}>
           Step
         </button>
+        {onReset && (
+          <button
+            className="secondary"
+            onClick={onReset}
+            disabled={resetDisabled}
+            style={{ marginLeft: "auto" }}
+            title="Stop training and reset all state"
+          >
+            Stop / Reset
+          </button>
+        )}
       </div>
 
       {disabled && disabledReason && <p className="badge demo-badge">{disabledReason}</p>}

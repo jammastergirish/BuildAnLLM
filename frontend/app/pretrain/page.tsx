@@ -270,10 +270,6 @@ export default function PretrainPage() {
     fetchJson<{ sources: DataSource[] }>("/api/pretrain/data-sources")
       .then((data) => {
         setDataSources(data.sources);
-        // Default to first source if available
-        if (data.sources.length > 0) {
-          setSelectedDataSources(new Set([data.sources[0].name]));
-        }
       })
       .catch((err) => setError((err as Error).message));
   }, []);
@@ -420,6 +416,31 @@ export default function PretrainPage() {
       return;
     }
     await resumeJob();
+  };
+
+  const resetJob = async () => {
+    // Cancel the job if it exists and is running/paused
+    if (job && !["completed", "error", "canceled"].includes(job.status)) {
+      try {
+        await fetchJson(`/api/pretrain/jobs/${job.job_id}/cancel`, { method: "POST" });
+      } catch {
+        // Ignore cancel errors - we're resetting anyway
+      }
+    }
+
+    // Reset all training state
+    setJob(null);
+    setMetrics(null);
+    setMetricsHistory([]);
+    setEvalHistory([]);
+    setLogs([]);
+    setInspectData(null);
+    setAttention([]);
+    setError(null);
+    setIsCreating(false);
+    setInspectSample(0);
+    setAttnLayer(0);
+    setAttnHead(0);
   };
 
   const inspectBatch = async (sampleIndex?: number, silent = false) => {
@@ -1335,6 +1356,7 @@ export default function PretrainPage() {
           error={error}
           onPrimary={handlePrimaryAction}
           onStep={stepJob}
+          onReset={resetJob}
         />
       </section>
 

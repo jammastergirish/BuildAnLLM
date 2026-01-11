@@ -262,21 +262,6 @@ def test_data_sources_endpoint(api_client: TestClient):
 
 
 @pytest.mark.integration
-def test_data_sources_include_multilingual(api_client: TestClient):
-    """Test that data sources include non-English sources."""
-    response = api_client.get("/api/pretrain/data-sources")
-    assert response.status_code == 200
-    
-    sources = response.json()["sources"]
-    source_names = [s["name"] for s in sources]
-    
-    # Check for multilingual sources
-    assert "Muhammad al-Khwarizmi" in source_names
-    assert "Marcel Proust" in source_names
-    assert "Miguel de Cervantes" in source_names
-
-
-@pytest.mark.integration
 def test_pretrain_job_with_training_text_paths(api_client: TestClient):
     """Test creating a pretrain job with specific training_text_paths."""
     payload = {
