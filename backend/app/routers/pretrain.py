@@ -23,7 +23,7 @@ from pretraining.training.training_args import TransformerTrainingArgs
 from pretraining.training.trainer import TransformerTrainer
 from utils import get_device
 
-router = APIRouter(prefix="/api/pretrain", dependencies=[Depends(block_if_demo)])
+router = APIRouter(prefix="/api/pretrain")
 
 
 def _parse_payload(payload: str) -> PretrainJobPayload:
@@ -62,7 +62,7 @@ def _read_training_text(
     return training_path.read_text(encoding="utf-8")
 
 
-@router.post("/jobs", response_model=JobStatusResponse)
+@router.post("/jobs", response_model=JobStatusResponse, dependencies=[Depends(block_if_demo)])
 async def create_job(
     payload: str = Form(...),
     training_file: Optional[UploadFile] = File(default=None),
@@ -130,7 +130,7 @@ async def job_status(job_id: str) -> JobStatusResponse:
     return JobStatusResponse(**payload)
 
 
-@router.post("/jobs/{job_id}/step")
+@router.post("/jobs/{job_id}/step", dependencies=[Depends(block_if_demo)])
 async def step_job(job_id: str, request: JobStepRequest) -> dict:
     job = job_registry.get(job_id)
     if not job:
@@ -140,7 +140,7 @@ async def step_job(job_id: str, request: JobStepRequest) -> dict:
     return {"metrics": job.step_once(include_batch=request.include_batch)}
 
 
-@router.post("/jobs/{job_id}/inspect")
+@router.post("/jobs/{job_id}/inspect", dependencies=[Depends(block_if_demo)])
 async def inspect_job(job_id: str, request: InspectRequest) -> dict:
     job = job_registry.get(job_id)
     if not job:
@@ -157,7 +157,7 @@ async def inspect_job(job_id: str, request: InspectRequest) -> dict:
     return payload
 
 
-@router.post("/jobs/{job_id}/attention")
+@router.post("/jobs/{job_id}/attention", dependencies=[Depends(block_if_demo)])
 async def attention_job(job_id: str, request: AttentionRequest) -> dict:
     job = job_registry.get(job_id)
     if not job:
@@ -175,7 +175,7 @@ async def attention_job(job_id: str, request: AttentionRequest) -> dict:
     return payload
 
 
-@router.post("/jobs/{job_id}/pause")
+@router.post("/jobs/{job_id}/pause", dependencies=[Depends(block_if_demo)])
 async def pause_job(job_id: str) -> dict:
     job = job_registry.get(job_id)
     if not job:
@@ -184,7 +184,7 @@ async def pause_job(job_id: str) -> dict:
     return job._status_payload()
 
 
-@router.post("/jobs/{job_id}/resume")
+@router.post("/jobs/{job_id}/resume", dependencies=[Depends(block_if_demo)])
 async def resume_job(job_id: str) -> dict:
     job = job_registry.get(job_id)
     if not job:
@@ -193,7 +193,7 @@ async def resume_job(job_id: str) -> dict:
     return job._status_payload()
 
 
-@router.post("/jobs/{job_id}/cancel")
+@router.post("/jobs/{job_id}/cancel", dependencies=[Depends(block_if_demo)])
 async def cancel_job(job_id: str) -> dict:
     job = job_registry.get(job_id)
     if not job:
@@ -202,7 +202,7 @@ async def cancel_job(job_id: str) -> dict:
     return job._status_payload()
 
 
-@router.get("/jobs/{job_id}/events")
+@router.get("/jobs/{job_id}/events", dependencies=[Depends(block_if_demo)])
 async def stream_events(job_id: str) -> StreamingResponse:
     job = job_registry.get(job_id)
     if not job:
