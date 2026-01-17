@@ -13,6 +13,8 @@ import SideNav from "../../components/SideNav";
 import StatCard from "../../components/StatCard";
 import TokenRainbow from "../../components/TokenRainbow";
 import TrainingControls from "../../components/TrainingControls";
+import GradientChart from "../../components/GradientChart";
+import LossLandscape from "../../components/LossLandscape";
 import { fetchJson, makeFormData, CodeSnippet, JobStatus } from "../../lib/api";
 import { useSse } from "../../lib/useSse";
 import { useScrollSpy } from "../../lib/useScrollSpy";
@@ -46,6 +48,7 @@ const pretrainSections = [
   { id: "understand-model", label: "Understand" },
   { id: "train-model", label: "Train" },
   { id: "live-metrics", label: "Metrics" },
+  { id: "dynamics", label: "Dynamics" },
   { id: "inspect-batch", label: "Inspect batch" },
   { id: "eval-history", label: "Evaluation history" },
   { id: "logs", label: "Logs" },
@@ -71,6 +74,8 @@ type MetricsPayload = {
   elapsed_time?: number;
   iter_per_sec?: number;
   eta_seconds?: number;
+  layer_grads?: { layer: string; norm: number }[];
+  trajectory?: { x: number; y: number };
 };
 
 type AxisDomainValue = number | "dataMax";
@@ -104,6 +109,8 @@ export default function PretrainPage() {
   const [job, setJob] = useState<JobStatus | null>(null);
   const [metrics, setMetrics] = useState<MetricsPayload | null>(null);
   const [metricsHistory, setMetricsHistory] = useState<MetricsPayload[]>([]);
+  const [activeLayerGrads, setActiveLayerGrads] = useState<{ layer: string; norm: number }[]>([]);
+  const [trajectoryHistory, setTrajectoryHistory] = useState<{ x: number; y: number; iter: number; loss?: number }[]>([]);
   const [evalHistory, setEvalHistory] = useState<Record<string, number>[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [snippets, setSnippets] = useState<CodeSnippet[]>([]);
@@ -174,6 +181,18 @@ export default function PretrainPage() {
       const payload = lastEvent.payload as MetricsPayload;
       setMetrics(payload);
       setMetricsHistory((prev) => [...prev, payload]);
+      
+      if (payload.layer_grads) {
+        setActiveLayerGrads(payload.layer_grads);
+      }
+      
+      if (payload.trajectory) {
+        setTrajectoryHistory((prev) => [
+            ...prev, 
+            { ...payload.trajectory!, iter: payload.iter ?? 0, loss: payload.loss }
+        ].slice(-500)); // Keep last 500 points
+      }
+
       setJob((prev) =>
         prev
           ? {
@@ -408,6 +427,8 @@ export default function PretrainPage() {
       setEvalHistory([]);
       setInspectData(null);
       setAttention([]);
+      setActiveLayerGrads([]);
+      setTrajectoryHistory([]);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -469,6 +490,8 @@ export default function PretrainPage() {
     setLogs([]);
     setInspectData(null);
     setAttention([]);
+    setActiveLayerGrads([]);
+    setTrajectoryHistory([]);
     setError(null);
     setIsCreating(false);
     setInspectSample(0);
@@ -854,6 +877,7 @@ export default function PretrainPage() {
             </div>
           )}
         </div>
+
       </section>
 
       <section id="architecture" className="section scroll-section">
@@ -1247,6 +1271,7 @@ export default function PretrainPage() {
             <StatCard label="Learning Rate" value={trainingParams.learning_rate} />
           </div>
         </div>
+
       </section>
 
       <section id="tokenizer" className="section scroll-section">
@@ -1269,6 +1294,7 @@ export default function PretrainPage() {
             ))}
           </div>
         </div>
+
       </section>
 
       <section id="hyperparameters" className="section scroll-section">
@@ -1380,6 +1406,7 @@ export default function PretrainPage() {
             </div>
           </details>
         </div>
+
       </section>
 
       <section id="understand-model" className="section scroll-section">
@@ -1413,6 +1440,7 @@ export default function PretrainPage() {
             </div>
           </details>
         </div>
+
       </section>
 
       <section id="train-model" className="section scroll-section">
@@ -1440,6 +1468,7 @@ export default function PretrainPage() {
           onStep={stepJob}
           onReset={resetJob}
         />
+
       </section>
 
       <section id="live-metrics" className="section scroll-section">
@@ -1474,7 +1503,84 @@ export default function PretrainPage() {
               { dataKey: "running_loss", name: "Running Loss", color: "var(--accent-2)" },
             ]}
           />
+          
+          <div style={{ marginTop: 20, borderTop: "1px solid var(--stroke-subtle)", paddingTop: 16 }}>
+            <details>
+                <summary style={{ cursor: "pointer", color: "var(--ink-2)", fontSize: "0.9rem" }}>
+                    What am I looking at?
+                </summary>
+                <div style={{ marginTop: 12, fontSize: "0.9rem", color: "var(--ink-1)", lineHeight: 1.6 }}>
+                    <p style={{ marginBottom: 8 }}><strong>Progress:</strong> How far along the training is (based on max iterations).</p>
+                    <p style={{ marginBottom: 8 }}><strong>Loss (Cross Entropy):</strong> The main objective function. Lower is better. It measures how "surprised" the model is by the real next token.</p>
+                    <p style={{ marginBottom: 8 }}><strong>Running Loss:</strong> A smoothed average of the loss. This helps you see trends better when the raw loss is jumping around.</p>
+                     <p style={{ marginBottom: 8 }}><strong>Grad Norm:</strong> The size of the update step. If this explodes (goes huge), training might crash. If it goes to zero, the model has stopped learning.</p>
+                </div>
+            </details>
+          </div>
         </div>
+
+
+      </section>
+
+      <section id="dynamics" className="section scroll-section">
+        <div className="section-title">
+            <h2>Dynamics</h2>
+            <p>Visualize gradient norms and optimization trajectory.</p>
+        </div>
+        <div className="card">
+            <div className="grid-2">
+                <div>
+                    <div className="row-label" style={{ marginBottom: 8 }}>
+                        <span className="row-label-title">Gradient Norms per Layer</span>
+                    </div>
+                    {activeLayerGrads.length > 0 ? (
+                        <GradientChart data={activeLayerGrads} />
+                    ) : (
+                        <div style={{ padding: 20, textAlign: "center", opacity: 0.6 }}>
+                            Start training to see gradients
+                        </div>
+                    )}
+                </div>
+                <div>
+                     <div className="row-label" style={{ marginBottom: 8 }}>
+                        <span className="row-label-title">Loss Landscape Trajectory (2D Projection)</span>
+                    </div>
+                    {trajectoryHistory.length > 0 ? (
+                        <LossLandscape data={trajectoryHistory} />
+                    ) : (
+                         <div style={{ padding: 20, textAlign: "center", opacity: 0.6 }}>
+                            Start training to see trajectory
+                        </div>
+                    )}
+                </div>
+            </div>
+            
+            <div style={{ marginTop: 20, borderTop: "1px solid var(--stroke-subtle)", paddingTop: 16 }}>
+                <details>
+                    <summary style={{ cursor: "pointer", color: "var(--ink-2)", fontSize: "0.9rem" }}>
+                        What am I looking at?
+                    </summary>
+                    <div style={{ marginTop: 12, fontSize: "0.9rem", color: "var(--ink-1)", lineHeight: 1.6 }}>
+                        <p style={{ marginBottom: 8 }}><strong>Gradient Norms per Layer:</strong> This shows the magnitude (L2 norm) of the gradients for each part of the model. It tells you "how hard" each layer is trying to change.</p>
+                        <ul style={{ paddingLeft: 20, marginBottom: 16 }}>
+                             <li><strong>Layers 0-N:</strong> The main transformer blocks.</li>
+                             <li><strong>Embedding:</strong> The input token embeddings.</li>
+                             <li><strong>Head:</strong> The final output layer projecting to vocabulary.</li>
+                             <li><strong>Norm:</strong> The Layer Normalization parameters (scale/bias) that help stabilize training.</li>
+                        </ul>
+                        
+                        <p style={{ marginBottom: 8 }}><strong>Loss Landscape Trajectory:</strong> Neural networks live in a massive multi-dimensional space (millions of parameters). We can't see that, so we cheat:</p>
+                        <ul style={{ paddingLeft: 20 }}>
+                             <li>We pick two <strong>random, fixed directions</strong> (random vectors) at the start.</li>
+                             <li>These become our X and Y axes (unitless dimensions).</li>
+                             <li>As the model trains, we project its current weights onto this 2D plane.</li>
+                             <li>The resulting line shows the path the model is taking through the "loss landscape" as it tries to find a minimum (a valley of low loss).</li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
+        </div>
+
       </section>
 
       <section id="inspect-batch" className="section scroll-section">
@@ -1553,7 +1659,27 @@ export default function PretrainPage() {
               <Heatmap matrix={attention} labels={inspectData?.token_labels || []} />
 
           </div>
+          
+           <div style={{ marginTop: 20, borderTop: "1px solid var(--stroke-subtle)", paddingTop: 16 }}>
+                <details>
+                    <summary style={{ cursor: "pointer", color: "var(--ink-2)", fontSize: "0.9rem" }}>
+                        What am I looking at?
+                    </summary>
+                     <div style={{ marginTop: 12, fontSize: "0.9rem", color: "var(--ink-1)", lineHeight: 1.6 }}>
+                        <p style={{ marginBottom: 8 }}><strong>Input Tokens:</strong> The unique integer IDs (and colored labels) for each part of the text. Models don't see words; they see tokens.</p>
+                        <p style={{ marginBottom: 8 }}><strong>Target:</strong> The actual next token in the training data that the model is trying to predict.</p>
+                        <p style={{ marginBottom: 8 }}><strong>Predictions:</strong> The top 10 tokens the model <em>thought</em> should come next, and their probabilities.</p>
+                        <p style={{ marginBottom: 8 }}><strong>Attention Heatmap:</strong> This grid shows how much the model attends to past tokens when processing the current token.</p>
+                        <ul style={{ paddingLeft: 20 }}>
+                             <li><strong>Vertical Axis (Query):</strong> The token currently being processed.</li>
+                             <li><strong>Horizontal Axis (Key):</strong> The past tokens it is "looking back" at.</li>
+                             <li><strong>Bright Cells:</strong> Strong attention relationships.</li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
         </div>
+
       </section>
 
       <section id="eval-history" className="section scroll-section">
@@ -1574,7 +1700,25 @@ export default function PretrainPage() {
               { dataKey: "val", name: "Val Loss", color: "#fbbf24" },
             ]}
           />
+          
+         <div style={{ marginTop: 20, borderTop: "1px solid var(--stroke-subtle)", paddingTop: 16 }}>
+            <details>
+                <summary style={{ cursor: "pointer", color: "var(--ink-2)", fontSize: "0.9rem" }}>
+                    What am I looking at?
+                </summary>
+                <div style={{ marginTop: 12, fontSize: "0.9rem", color: "var(--ink-1)", lineHeight: 1.6 }}>
+                    <p style={{ marginBottom: 8 }}><strong>Train Loss:</strong> The error on the data the model is actively learning from.</p>
+                    <p style={{ marginBottom: 8 }}><strong>Val (Validation) Loss:</strong> The error on data the model has NEVER seen before.</p>
+                    <p style={{ marginBottom: 8 }}><strong>Why compare them?</strong></p>
+                    <ul style={{ paddingLeft: 20 }}>
+                            <li>If <strong>Val Loss</strong> starts going UP while <strong>Train Loss</strong> goes DOWN, the model is significantly <strong>overfitting</strong> (memorizing, not learning).</li>
+                            <li>Ideally, both go down together.</li>
+                    </ul>
+                </div>
+            </details>
         </div>
+        </div>
+
       </section>
 
       <section id="logs" className="section scroll-section">

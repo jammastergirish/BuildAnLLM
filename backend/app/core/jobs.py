@@ -262,6 +262,8 @@ def _serialize_metrics(metrics: Dict[str, Any], include_batch: bool = False) -> 
         "running_loss": metrics.get("running_loss"),
         "grad_norm": metrics.get("grad_norm"),
         "aux_loss": metrics.get("aux_loss"),
+        "layer_grads": metrics.get("layer_grads"),
+        "trajectory": metrics.get("trajectory"),
     }
 
     if include_batch:
