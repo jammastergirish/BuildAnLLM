@@ -91,10 +91,26 @@ def _load_state_dict(model, checkpoint: Dict, device: torch.device) -> None:
     missing_keys = []
     unexpected_keys = []
 
+    # Remap known legacy/TransformerLens keys
+    if "embed.W_E" in state_dict and "embed.embedding.weight" not in state_dict:
+        state_dict["embed.embedding.weight"] = state_dict["embed.W_E"]
+    if "unembed.W_U" in state_dict and "unembed.linear.weight" not in state_dict:
+        # Check if transpose is needed
+        # W_U is [d_model, d_vocab], linear.weight is [d_vocab, d_model]
+        w_u = state_dict["unembed.W_U"]
+        target_key = "unembed.linear.weight"
+        if target_key in model_state_dict and model_state_dict[target_key].shape != w_u.shape:
+             state_dict[target_key] = w_u.T
+        else:
+             state_dict[target_key] = w_u
+
     for key, value in state_dict.items():
         if key in model_state_dict:
             if model_state_dict[key].shape == value.shape:
                 filtered_state_dict[key] = value
+            elif hasattr(value, "T") and model_state_dict[key].shape == value.T.shape:
+                 # Auto-transpose if shapes match that way (common for linear layers)
+                 filtered_state_dict[key] = value.T
             else:
                 shape_msg = f"{key} (shape mismatch: {value.shape} vs {model_state_dict[key].shape})"
                 unexpected_keys.append(shape_msg)

@@ -9,6 +9,7 @@ const links = [
   { href: "/pretrain", label: "Pre-Training" },
   { href: "/finetune", label: "Fine-Tuning" },
   { href: "/inference", label: "Inference" },
+  { href: "/evaluations", label: "Evaluations" },
 ];
 
 const playgroundItems = [{ href: "/playground", label: "Tokenizer" }];

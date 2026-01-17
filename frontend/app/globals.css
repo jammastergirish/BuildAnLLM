@@ -83,7 +83,7 @@ header.site-header {
   font-family: var(--font-sans), "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
   font-size: 20px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
 }
 
 .brand span {
@@ -99,8 +99,8 @@ nav.primary {
   font-size: 12px;
   font-weight: 500;
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  /* text-transform: uppercase; */
+  letter-spacing: 0em;
 }
 
 nav.primary a {
@@ -224,8 +224,8 @@ nav.primary a:hover {
 
 .demo-banner-title {
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.05em;
   color: var(--ink-2);
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
 }
@@ -276,8 +276,8 @@ nav.primary a:hover {
 
 .side-nav-title {
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.05em;
   color: var(--ink-2);
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
   margin-bottom: 12px;
@@ -295,8 +295,8 @@ nav.primary a:hover {
   border: 1px solid transparent;
   color: var(--ink-2);
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
+  /* text-transform: uppercase; */
+  letter-spacing: 0em;
   transition: all 120ms ease;
 }
 
@@ -334,7 +334,7 @@ nav.primary a:hover {
   font-size: 24px;
   font-family: var(--font-sans), "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
 }
 
 .section-title p {
@@ -376,7 +376,7 @@ nav.primary a:hover {
   font-size: 12px;
   color: var(--ink-2);
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.1em;
 }
 
@@ -395,8 +395,8 @@ textarea {
 
 label {
   font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  /* text-transform: uppercase; */
+  letter-spacing: 0em;
   color: var(--ink-2);
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
 }
@@ -435,7 +435,7 @@ input[type="file"]::file-selector-button {
   color: var(--accent);
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   cursor: pointer;
 }
 
@@ -448,7 +448,7 @@ input[type="file"]::-webkit-file-upload-button {
   color: var(--accent);
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   cursor: pointer;
 }
 
@@ -466,7 +466,7 @@ label.checkbox {
   gap: 10px;
   font-size: 11px;
   letter-spacing: 0.16em;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   color: var(--ink-2);
   cursor: pointer;
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
@@ -590,7 +590,7 @@ button.secondary:hover {
   border: 1px solid var(--stroke-strong);
   color: var(--accent);
   font-size: 12px;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.08em;
 }
 
@@ -608,7 +608,8 @@ button.secondary:hover {
 }
 
 .table th {
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
+  letter-spacing: 0em;
   font-size: 12px;
   letter-spacing: 0.08em;
   color: var(--ink-2);
@@ -658,7 +659,7 @@ button.secondary:hover {
   font-family: var(--font-sans), "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
   color: var(--ink-1);
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
 }
 
 .card h1 {
@@ -720,7 +721,7 @@ button.secondary:hover {
   font-size: 11px;
   color: var(--ink-2);
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.16em;
   padding-top: 6px;
 }
@@ -739,7 +740,7 @@ button.secondary:hover {
   background: rgba(7, 7, 9, 0.7);
   font-size: 11px;
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.08em;
 }
 
@@ -770,7 +771,7 @@ button.secondary:hover {
 
 .inspect-subtitle {
   font-size: 11px;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.18em;
   color: var(--ink-2);
   font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;

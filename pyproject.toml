@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "hypothesis>=6.148.8",
     "httpx>=0.28.1",
+    "lm-eval>=0.4.0",
 ]
 
 [project.optional-dependencies]

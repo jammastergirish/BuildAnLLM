@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.routers import checkpoints, docs, finetune, inference, pretrain, system, tokenizers
+from backend.app.routers import checkpoints, docs, finetune, inference, pretrain, system, tokenizers, evaluations
 
 app = FastAPI(title="Transformer Training API")
 
@@ -28,6 +28,7 @@ app.include_router(pretrain.router)
 app.include_router(finetune.router)
 app.include_router(inference.router)
 app.include_router(tokenizers.router)
+app.include_router(evaluations.router)
 
 frontend_dir = Path(__file__).resolve().parents[2] / "frontend" / "out"
 if frontend_dir.exists():

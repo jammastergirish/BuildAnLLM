@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from queue import Queue, Empty
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Union
 
 
 @dataclass
@@ -194,18 +194,80 @@ class TrainingJob:
             self.started_at = None
 
 
+@dataclass
+class EvaluationJob:
+    """State for an evaluation job."""
+
+    job_id: str
+    evaluator: Any # CustomEvaluator
+    tasks: list[str]
+    created_at: float = field(default_factory=time.time)
+    started_at: Optional[float] = None
+    accumulated_time: float = 0.0
+    status: str = "pending"
+    progress: float = 0.0
+    error: Optional[str] = None
+    results: Optional[Dict[str, Any]] = None
+    events: EventQueue = field(default_factory=EventQueue)
+    
+    _thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self.status = "running"
+        self.started_at = time.time()
+        self.events.put("status", self._status_payload())
+        
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+
+    def _run_loop(self) -> None:
+        try:
+            # Defined callback to update progress
+            def progress_callback(current, total):
+                self.progress = round((current / total) * 100, 1)
+                self.events.put("progress", {"percent": self.progress, "current": current, "total": total})
+
+            # Run evaluation
+            results = self.evaluator.evaluate(self.tasks, progress_callback=progress_callback)
+            
+            self.results = results
+            self.status = "completed"
+            self.progress = 100.0
+            self.events.put("done", self._status_payload())
+            
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            self.error = str(exc)
+            self.status = "error"
+            self.events.put("error", {"message": self.error})
+
+    def _status_payload(self) -> Dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "status": self.status,
+            "progress": self.progress,
+            "tasks": self.tasks,
+            "created_at": self.created_at,
+            "results": self.results,
+            "error": self.error
+        }
+
+
 class JobRegistry:
     """In-memory registry for active training jobs."""
 
     def __init__(self) -> None:
-        self._jobs: Dict[str, TrainingJob] = {}
+        self._jobs: Dict[str, Union[TrainingJob, EvaluationJob]] = {}
         self._lock = threading.Lock()
 
-    def add(self, job: TrainingJob) -> None:
+    def add(self, job: Union[TrainingJob, EvaluationJob]) -> None:
         with self._lock:
             self._jobs[job.job_id] = job
 
-    def get(self, job_id: str) -> Optional[TrainingJob]:
+    def get(self, job_id: str) -> Optional[Union[TrainingJob, EvaluationJob]]:
         with self._lock:
             return self._jobs.get(job_id)
 
@@ -213,7 +275,7 @@ class JobRegistry:
         with self._lock:
             self._jobs.pop(job_id, None)
 
-    def list(self) -> Dict[str, TrainingJob]:
+    def list(self) -> Dict[str, Union[TrainingJob, EvaluationJob]]:
         with self._lock:
             return dict(self._jobs)
 
