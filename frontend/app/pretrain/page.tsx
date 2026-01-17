@@ -14,7 +14,7 @@ import StatCard from "../../components/StatCard";
 import TokenRainbow from "../../components/TokenRainbow";
 import TrainingControls from "../../components/TrainingControls";
 import GradientChart from "../../components/GradientChart";
-import LossLandscape from "../../components/LossLandscape";
+import LossLandscape3D from "../../components/LossLandscape3D";
 import { fetchJson, makeFormData, CodeSnippet, JobStatus } from "../../lib/api";
 import { useSse } from "../../lib/useSse";
 import { useScrollSpy } from "../../lib/useScrollSpy";
@@ -1541,18 +1541,19 @@ export default function PretrainPage() {
                         </div>
                     )}
                 </div>
-                <div>
-                     <div className="row-label" style={{ marginBottom: 8 }}>
-                        <span className="row-label-title">Loss Landscape Trajectory (2D Projection)</span>
-                    </div>
-                    {trajectoryHistory.length > 0 ? (
-                        <LossLandscape data={trajectoryHistory} />
-                    ) : (
-                         <div style={{ padding: 20, textAlign: "center", opacity: 0.6 }}>
-                            Start training to see trajectory
-                        </div>
-                    )}
+            </div>
+            
+            <div style={{ marginTop: 20 }}>
+                 <div className="row-label" style={{ marginBottom: 8 }}>
+                    <span className="row-label-title">Loss Landscape in 3D (Loss on Z-axis)</span>
                 </div>
+                 {trajectoryHistory.length > 0 ? (
+                    <LossLandscape3D data={trajectoryHistory.filter(t => t.loss !== undefined).map(t => ({ x: t.x, y: t.y, loss: t.loss! }))} />
+                ) : (
+                    <div style={{ padding: 20, textAlign: "center", opacity: 0.6 }}>
+                        Start training to see 3D landscape
+                    </div>
+                )}
             </div>
             
             <div style={{ marginTop: 20, borderTop: "1px solid var(--stroke-subtle)", paddingTop: 16 }}>
@@ -1571,10 +1572,10 @@ export default function PretrainPage() {
                         
                         <p style={{ marginBottom: 8 }}><strong>Loss Landscape Trajectory:</strong> Neural networks live in a massive multi-dimensional space (millions of parameters). We can't see that, so we cheat:</p>
                         <ul style={{ paddingLeft: 20 }}>
-                             <li>We pick two <strong>random, fixed directions</strong> (random vectors) at the start.</li>
-                             <li>These become our X and Y axes (unitless dimensions).</li>
+                             <li><strong>Random Projections:</strong> We pick two random, fixed directions (vectors) at the start. Why random? In high-dimensional spaces (millions of parameters), random projections preserve relative distances surprisingly well (Johnson-Lindenstrauss lemma). This allows us to see the "shape" of the optimization without needing to know the future trajectory.</li>
+                             <li>These vectors become our X and Y axes (unitless dimensions).</li>
                              <li>As the model trains, we project its current weights onto this 2D plane.</li>
-                             <li>The resulting line shows the path the model is taking through the "loss landscape" as it tries to find a minimum (a valley of low loss).</li>
+                             <li><strong>In 3D:</strong> We add the <strong>Loss</strong> as the vertical Z-axis. This lets you literally see the "descent" down the loss surface. The line shows the path the model is taking.</li>
                         </ul>
                     </div>
                 </details>
