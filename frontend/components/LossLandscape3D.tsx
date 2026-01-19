@@ -63,6 +63,14 @@ const LossLandscape3D: React.FC<LossLandscape3DProps> = ({ data }) => {
     };
   }, []);
 
+  if (!data || data.length === 0) {
+    return (
+      <div style={{ width: '100%', height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.6 }}>
+        Waiting for training data...
+      </div>
+    );
+  }
+
   return (
     <div style={{ width: '100%', height: '400px' }}>
       <Plot

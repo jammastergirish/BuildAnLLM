@@ -11,6 +11,8 @@ import StatCard from "../../components/StatCard";
 import TokenSegments from "../../components/TokenSegments";
 import TrainingControls from "../../components/TrainingControls";
 import ModelConfigSummary from "../../components/ModelConfigSummary";
+import GradientChart from "../../components/GradientChart";
+import LossLandscape3D from "../../components/LossLandscape3D";
 import { fetchJson, makeFormData, Checkpoint, CodeSnippet, JobStatus } from "../../lib/api";
 import { useSse } from "../../lib/useSse";
 import { useScrollSpy } from "../../lib/useScrollSpy";
@@ -29,6 +31,8 @@ type MetricsPayload = {
   elapsed_time?: number;
   iter_per_sec?: number;
   eta_seconds?: number;
+  layer_grads?: { layer: string; norm: number }[];
+  trajectory?: { x: number; y: number; loss?: number };
 };
 
 const finetuneSections = [
@@ -39,6 +43,7 @@ const finetuneSections = [
   { id: "understand", label: "Understand" },
   { id: "train", label: "Train" },
   { id: "metrics", label: "Metrics" },
+  { id: "dynamics", label: "Dynamics" },
   { id: "inspect-batch", label: "Inspect batch" },
   { id: "eval-history", label: "Eval history" },
   { id: "logs", label: "Logs" },
@@ -91,6 +96,10 @@ export default function FinetunePage() {
   const [attnHead, setAttnHead] = useState(0);
   const inspectThrottleRef = useRef(0);
   const inspectMaxTokens = 128;
+
+  // New states for visualization
+  const [activeLayerGrads, setActiveLayerGrads] = useState<{ layer: string; norm: number }[]>([]);
+  const [trajectoryHistory, setTrajectoryHistory] = useState<{ x: number; y: number; loss?: number }[]>([]);
 
   useEffect(() => {
     fetchJson<{ checkpoints: Checkpoint[] }>("/api/checkpoints")
@@ -160,6 +169,20 @@ export default function FinetunePage() {
       const payload = lastEvent.payload as MetricsPayload;
       setMetrics(payload);
       setMetricsHistory((prev) => [...prev.slice(-199), payload]);
+      
+      // Update visualization states
+      if (payload.layer_grads) {
+        setActiveLayerGrads(payload.layer_grads);
+      }
+      if (payload.trajectory && typeof payload.trajectory.x === 'number' && typeof payload.trajectory.y === 'number') {
+         const newPoint = {
+            x: payload.trajectory.x,
+            y: payload.trajectory.y,
+            loss: payload.loss
+         };
+        setTrajectoryHistory((prev) => [...prev, newPoint]);
+      }
+      
       setJob((prev) =>
         prev
           ? {
@@ -252,6 +275,8 @@ export default function FinetunePage() {
       setEvalHistory([]);
       setInspectData(null);
       setAttention([]);
+      setActiveLayerGrads([]);
+      setTrajectoryHistory([]);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -318,6 +343,8 @@ export default function FinetunePage() {
     setInspectSample(0);
     setAttnLayer(0);
     setAttnHead(0);
+    setActiveLayerGrads([]);
+    setTrajectoryHistory([]);
   };
 
   const loadSnippets = async () => {
@@ -797,11 +824,63 @@ export default function FinetunePage() {
               running_loss: row.running_loss ?? 0,
             }))}
             xKey="iter"
+            yDomain={undefined} // Auto-scale
             lines={[
               { dataKey: "loss", name: "Loss", color: "var(--accent)" },
               { dataKey: "running_loss", name: "Running Loss", color: "var(--accent-2)" },
             ]}
           />
+        </div>
+      </section>
+
+      <section id="dynamics" className="section scroll-section">
+        <div className="section-title">
+            <h2>Dynamics</h2>
+            <p>Visualize gradient norms and optimization trajectory.</p>
+        </div>
+        <div className="card">
+            <div className="grid-2">
+                <div>
+                     <div className="row-label" style={{ marginBottom: 8 }}>
+                        <span className="row-label-title">Gradient Norms per Layer</span>
+                    </div>
+                    {activeLayerGrads.length > 0 ? (
+                        <GradientChart data={activeLayerGrads} />
+                    ) : (
+                        <div style={{ padding: 20, textAlign: "center", opacity: 0.6 }}>
+                            Start training to see gradients
+                        </div>
+                    )}
+                </div>
+                  <div>
+                  <div className="row-label" style={{ marginBottom: 8 }}>
+                      <span className="row-label-title">Loss Landscape in 3D (Loss on Z-axis)</span>
+                  </div>
+                    <LossLandscape3D data={trajectoryHistory.filter(t => t.loss !== undefined).map(t => ({ x: t.x, y: t.y, loss: t.loss! }))} />
+                </div>
+            </div>
+            
+            <div style={{ marginTop: 20, borderTop: "1px solid var(--stroke-subtle)", paddingTop: 16 }}>
+                <details>
+                    <summary style={{ cursor: "pointer", color: "var(--ink-2)", fontSize: "0.9rem" }}>
+                        What am I looking at?
+                    </summary>
+                    <div style={{ marginTop: 12, fontSize: "0.9rem", color: "var(--ink-1)", lineHeight: 1.6 }}>
+                        <p style={{ marginBottom: 8 }}><strong>Gradient Norms per Layer:</strong> This shows the magnitude (L2 norm) of the gradients for each part of the model. It tells you "how hard" each layer is trying to change.</p>
+                         <ul style={{ paddingLeft: 20, marginBottom: 16 }}>
+                              <li>During Finetuning, these gradients are typically smaller than in pretraining.</li>
+                              <li>If you use LoRA, only the LoRA adapter layers will show significant gradients.</li>
+                        </ul>
+                        
+                        <p style={{ marginBottom: 8 }}><strong>Loss Landscape Trajectory:</strong> We visualize the optimization path by projecting the high-dimensional weight updates onto a 3D space.</p>
+                        <ul style={{ paddingLeft: 20 }}>
+                              <li><strong>X & Y:</strong> Random projection of current weights.</li>
+                              <li><strong>Z:</strong> Trianing Loss.</li>
+                              <li>This helps you see if the model is finding a "valley" or getting stuck in a plateau.</li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
         </div>
       </section>
 

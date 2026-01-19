@@ -6,9 +6,10 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from pretraining.training.training_args import TransformerTrainingArgs
 from pretraining.utils import extract_model_output_and_aux_loss, add_aux_loss_to_main_loss
+from pretraining.training.visualization import TrainingVisualizationMixin
 
 
-class TransformerTrainer:
+class TransformerTrainer(TrainingVisualizationMixin):
     def __init__(
         self,
         model: nn.Module,
@@ -59,47 +60,8 @@ class TransformerTrainer:
             os.makedirs(args.save_dir, exist_ok=True)
             
         # Initialize random projection vectors for loss landscape visualization
-        self._init_random_projections()
+        self._init_random_projections(self.device)
         
-    def _init_random_projections(self):
-        """Initialize random vectors for 2D loss landscape projection.
-        
-        We create two random normalized vectors u and v that are orthogonal.
-        These are used to project the high-dimensional weight space onto a 2D plane.
-        """
-        self.proj_u = {}
-        self.proj_v = {}
-        
-        for name, param in self.model.named_parameters():
-             if param.requires_grad:
-                # Create random vectors of same shape
-                u = torch.randn_like(param, device='cpu') # Store on CPU to save VRAM
-                v = torch.randn_like(param, device='cpu')
-                
-                # Normalize
-                self.proj_u[name] = u / (u.norm() + 1e-8)
-                self.proj_v[name] = v / (v.norm() + 1e-8)
-
-    def _get_trajectory_point(self):
-        """Calculate (x, y) coordinates of current weights in the random 2D plane."""
-        x, y = 0.0, 0.0
-        
-        # We need to compute dot product of (weights - initial_weights) . proj
-        # But for simplicity and to see movement, we can just project current weights
-        # Or better: (weights) . proj. The resulting path will show the trajectory.
-        
-        with torch.no_grad():
-            for name, param in self.model.named_parameters():
-                if name in self.proj_u and param.requires_grad:
-                    p_flat = param.detach().cpu().view(-1)
-                    u_flat = self.proj_u[name].view(-1)
-                    v_flat = self.proj_v[name].view(-1)
-                    
-                    x += torch.dot(p_flat, u_flat).item()
-                    y += torch.dot(p_flat, v_flat).item()
-                    
-        return {"x": x, "y": y}
-
     def _evaluate_batch(
         self,
         x_batch: torch.Tensor,
@@ -300,60 +262,6 @@ class TransformerTrainer:
             self.save_checkpoint(self.max_iters, is_final=True)
             self.save_loss_graph()
             
-    def _get_layer_grads(self):
-        """Compute gradient norms per layer/block."""
-        layer_grads = []
-        
-        # This is heuristics-based to group params by layer
-        # Assumes standard naming like "layers.0", "transformer.h.0" etc.
-        layer_norms = {}
-        
-        for name, param in self.model.named_parameters():
-            if param.grad is not None:
-                # Extract layer index if present
-                parts = name.split(".")
-                layer_idx = -1
-                for part in parts:
-                    if part.isdigit():
-                        layer_idx = int(part)
-                        break
-                
-                if layer_idx != -1:
-                    key = f"Layer {layer_idx}"
-                elif "embed" in name or "wte" in name:
-                    key = "Embedding"
-                elif "norm" in name or "ln" in name:
-                    key = "Norm"
-                elif "head" in name or "lm_head" in name:
-                    key = "Head"
-                else:
-                    key = "Other"
-                    
-                if key not in layer_norms:
-                    layer_norms[key] = {"sq_sum": 0.0, "count": 0}
-                
-                layer_norms[key]["sq_sum"] += param.grad.data.norm(2).item() ** 2
-                layer_norms[key]["count"] += 1
-        
-        # Finish calculation
-        for key, data in layer_norms.items():
-            layer_grads.append({
-                "layer": key,
-                "norm": data["sq_sum"] ** 0.5
-            })
-            
-        # Sort layers nicely
-        def sort_key(item):
-            name = item["layer"]
-            if name == "Embedding": return -1
-            if name.startswith("Layer"): return int(name.split(" ")[1])
-            if name == "Norm": return 999
-            if name == "Head": return 1000
-            if name == "Other": return 1001
-            return 0
-            
-        layer_grads.sort(key=sort_key)
-        return layer_grads
 
     def train_single_step(self):
         """Perform a single training step (one batch) and return metrics.
@@ -409,7 +317,7 @@ class TransformerTrainer:
             "inputs": x_batch.detach().cpu(), 
             "targets": y_batch.detach().cpu(),
             "layer_grads": self._get_layer_grads(),
-            "trajectory": self._get_trajectory_point()
+            "trajectory": self._get_trajectory_point(loss.item())
         }
 
     def save_checkpoint(self, iter_num: int, is_final: bool = False):

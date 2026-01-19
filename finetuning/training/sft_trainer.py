@@ -6,9 +6,10 @@ import torch.nn.functional as F
 import os
 from tqdm import tqdm
 from finetuning.training.finetuning_args import FinetuningArgs
+from pretraining.training.visualization import TrainingVisualizationMixin
 
 
-class SFTTrainer:
+class SFTTrainer(TrainingVisualizationMixin):
     """
     Trainer for supervised fine-tuning (SFT).
 
@@ -106,6 +107,9 @@ class SFTTrainer:
         # Create save directory if it doesn't exist
         if args.save_dir:
             os.makedirs(args.save_dir, exist_ok=True)
+            
+        # Initialize random projection vectors for loss landscape visualization
+        self._init_random_projections(device)
 
     def _compute_masked_loss(
         self,
@@ -146,6 +150,7 @@ class SFTTrainer:
             masks_flat.sum().clamp(min=1)
 
         return loss
+
 
     def _evaluate_batch(
         self,
@@ -428,5 +433,7 @@ class SFTTrainer:
             "grad_norm": total_norm,
             "inputs": x_batch.detach().cpu(),
             "targets": y_batch.detach().cpu(),
-            "masks": masks_batch.detach().cpu()
+            "masks": masks_batch.detach().cpu(),
+            "layer_grads": self._get_layer_grads(),
+            "trajectory": self._get_trajectory_point(loss.item())
         }
