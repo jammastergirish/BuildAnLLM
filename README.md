@@ -72,6 +72,8 @@ The app will open in your browser with the following pages:
    - **Real-time Controls**: **Start/Pause/Resume** and ⏭️ **Step to Next Batch** buttons for manual stepping.
    - **Attention Heatmaps**: Visualize how the model attends to different tokens in the sequence (visible when paused).
    - **Live Metrics**: Monitor Loss, Gradient Norms, and Validation performance in real-time.
+   - **3D Loss Landscape**: A real-time visualization of the optimization trajectory projected onto a 2D plane (using random projections). Watch how the model navigates the loss surface.
+   - **Layer Gradient Norms**: Monitors the gradient magnitude across different layers (Embeddings, Attention Headers, MLPs, Norms) to detect training instabilities like vanishing or exploding gradients.
 
 ### Inference
 
