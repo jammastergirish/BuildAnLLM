@@ -8,7 +8,7 @@ set -euo pipefail
 (cd frontend && npx playwright install)
 
 echo "Running backend tests..."
-uv run pytest
+uv run --extra test pytest
 
 echo "Running frontend tests..."
 (cd frontend && npm run test:run && npm run test:e2e)

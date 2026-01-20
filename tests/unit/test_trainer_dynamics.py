@@ -35,9 +35,11 @@ def test_visualization_metrics():
     # Test 1: Random Projections Initialization
     assert hasattr(trainer, "proj_u")
     assert hasattr(trainer, "proj_v")
-    # Should have entries for weights
-    assert "layer1.weight" in trainer.proj_u
-    assert trainer.proj_u["layer1.weight"].shape == model.layer1.weight.shape
+    # Should be a flat tensor with size equal to total parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    assert isinstance(trainer.proj_u, torch.Tensor)
+    assert trainer.proj_u.numel() == total_params
+    assert trainer.proj_u.ndim == 1
     
     # Test 2: Trajectory Point
     traj = trainer._get_trajectory_point()

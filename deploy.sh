@@ -23,3 +23,5 @@ uv export --format requirements-txt --output-file requirements.txt
 echo "Deploying to App Engine..."
 gcloud config set project build-an-llm
 gcloud app deploy app.yaml
+
+rm -r requirements.txt
