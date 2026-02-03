@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-clear
+clear && printf '\e[3J'
 
 # Function to handle script termination
 cleanup() {
