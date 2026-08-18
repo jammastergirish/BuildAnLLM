@@ -54,6 +54,37 @@ The app will open in your browser with the following pages:
 4. Trains for specified epochs with real-time loss visualization
 5. Saves checkpoints to `checkpoints/YYYYMMDDHHMMSS/` (timestamped folders)
 
+#### Minimal PyTorch example
+
+For a small, self-contained version of the training loop, run:
+
+```bash
+python examples/simple_transformer.py train \
+  --data input_data/pretraining/wilde.txt \
+  --steps 500
+```
+
+Continue training that checkpoint on new text with a lower learning rate:
+
+```bash
+python examples/simple_transformer.py finetune \
+  --data path/to/domain_text.txt \
+  --checkpoint checkpoints/simple_transformer.pt \
+  --output checkpoints/fine_tuned.pt \
+  --steps 200
+```
+
+The example uses only PyTorch and keeps the complete causal-attention,
+next-token training, checkpoint, fine-tuning, and generation flow in one file.
+
+To run the same example in the cloud, upload
+`examples/simple_transformer_colab.ipynb` to Google Colab and follow the cells.
+
+For a genuine supervised fine-tuning example, see
+`examples/cbrn_finetuning/`. It adapts FLAN-T5 to safety-focused CBRN
+emergency-preparedness questions and records baseline-versus-fine-tuned
+evaluation results.
+
 #### How To
 
 1. Upload training data or use the default pretraining text (`input_data/pretraining/orwell.txt`)
