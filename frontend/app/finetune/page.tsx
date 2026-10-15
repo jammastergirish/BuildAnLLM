@@ -62,6 +62,7 @@ export default function FinetunePage() {
     lora_target_modules: "all",
   });
   const [dataFile, setDataFile] = useState<File | null>(null);
+  const [dataset, setDataset] = useState<"default" | "arithmetic">("default");
   const [csvPreview, setCsvPreview] = useState<string[][]>([]);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [maxLength, setMaxLength] = useState(512);
@@ -262,6 +263,7 @@ export default function FinetunePage() {
         training: trainingParams,
         auto_start: autoStart,
         mask_prompt: true,
+        dataset,
       };
       const form = makeFormData(payload, dataFile || undefined, "data_file");
       const data = await fetchJson<JobStatus>("/api/finetune/jobs", {
@@ -595,9 +597,49 @@ export default function FinetunePage() {
       <section id="training-data" className="section scroll-section">
         <div className="section-title">
           <h2>Training Data</h2>
-          <p>Upload a CSV or use the default data.</p>
+          <p>Upload a CSV or use one of the bundled datasets.</p>
         </div>
         <div className="card">
+          <div className="inline-row" style={{ marginBottom: 12 }}>
+            <button
+              className={dataset === "default" ? "primary" : "secondary"}
+              onClick={() => setDataset("default")}
+            >
+              General Q&amp;A
+            </button>
+            <button
+              className={dataset === "arithmetic" ? "primary" : "secondary"}
+              onClick={() => {
+                setDataset("arithmetic");
+                // A small model needs a much higher learning rate and bigger
+                // batches than the defaults to learn addition in a few minutes.
+                setMaxLength(32);
+                setTrainingParams((prev) => ({
+                  ...prev,
+                  batch_size: 32,
+                  epochs: 1,
+                  max_steps_per_epoch: 3000,
+                  learning_rate: 0.0003,
+                  eval_interval: 500,
+                  eval_iters: 10,
+                  save_interval: 500,
+                }));
+              }}
+            >
+              Arithmetic (for RL)
+            </button>
+          </div>
+          {dataset === "arithmetic" && !dataFile && (
+            <p>
+              20,000 addition problems with 1- to 3-digit numbers, each answered as{" "}
+              <code>&lt;answer&gt;7 7&lt;/answer&gt;</code>. Numbers are written one digit at a time so the
+              GPT-2 tokenizer gives each digit its own token. This teaches the format the <b>RL</b> tab rewards.
+              Choosing it also sets the hyperparameters below to values that work (batch 32, learning rate 3e-4,
+              3,000 steps), and saves a checkpoint every 500 steps. Accuracy usually jumps between steps 2,000 and
+              3,000, so an intermediate checkpoint leaves RL more room to improve. Needs a checkpoint trained with
+              the GPT-2 (tiktoken) tokenizer.
+            </p>
+          )}
           <input
             type="file"
             accept=".csv"

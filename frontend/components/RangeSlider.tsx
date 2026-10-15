@@ -1,9 +1,9 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 type RangeSliderProps = {
-  label: string;
+  label: ReactNode;
   value: number;
   min: number;
   max: number;

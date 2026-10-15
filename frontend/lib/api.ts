@@ -33,6 +33,7 @@ export type Checkpoint = {
   path: string;
   run_id: string;
   is_finetuned: boolean;
+  stage?: "pretrain" | "sft" | "rl";
   name: string;
   iter: number | null;
   mtime: number;

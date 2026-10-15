@@ -23,9 +23,10 @@ I'm incredibly grateful to all those from whom I learned and borrowed ideas (see
 2. [Key Concepts](#key-concepts)
 3. [Pre-Training Pipeline](#pre-training-pipeline)
 4. [Fine-Tuning Pipeline](#fine-tuning-pipeline)
-5. [Inference and Sampling](#inference-and-sampling)
-6. [Core Components Deep Dive](#core-components-deep-dive)
-7. [Resources](#resources)
+5. [Reinforcement Learning Pipeline](#reinforcement-learning-pipeline)
+6. [Inference and Sampling](#inference-and-sampling)
+7. [Core Components Deep Dive](#core-components-deep-dive)
+8. [Resources](#resources)
 
 ---
 
@@ -43,6 +44,7 @@ The app will open in your browser with the following pages:
 - **Overview**: System details and this README
 - **Pre-Training Page**: Configure and pre-train models with a visual interface
 - **Fine-Tuning Page**: Fine-tune pre-trained models on prompt/response pairs
+- **RL Page**: Improve a fine-tuned model with reinforcement learning (GRPO) on arithmetic
 - **Inference Page**: Generate text from trained models (pre-trained or fine-tuned)
 - **Playground**
 
@@ -74,6 +76,18 @@ The app will open in your browser with the following pages:
    - **Live Metrics**: Monitor Loss, Gradient Norms, and Validation performance in real-time.
    - **3D Loss Landscape**: A real-time visualization of the optimization trajectory projected onto a 2D plane (using random projections). Watch how the model navigates the loss surface.
    - **Layer Gradient Norms**: Monitors the gradient magnitude across different layers (Embeddings, Attention Headers, MLPs, Norms) to detect training instabilities like vanishing or exploding gradients.
+
+### Reinforcement Learning (GRPO)
+
+The RL page trains a model to add numbers. A program checks every answer, and the model learns from which of its own answers scored better.
+
+#### How To
+
+1. **Fine-tune first.** On the Fine-Tuning page, pick a checkpoint trained with the GPT-2 (tiktoken) tokenizer and choose the **Arithmetic (for RL)** dataset. This sets working hyperparameters and saves a checkpoint every 500 steps. It takes about 4 minutes on an M-series Mac.
+2. On the RL page, select one of the resulting SFT checkpoints and click **Load**. An intermediate checkpoint (for example `checkpoint_2500.pt`) often works best: it uses the answer format reliably but still gets some sums wrong, which leaves RL room to improve.
+3. Click **Sample only** to watch the model answer without changing it, or **Train** to apply updates. Each answer's tokens are coloured by its advantage: green answers beat their group and get pushed up, red ones get pushed down.
+4. Click **Run held-out check** to score the starting model and the current model on problems that neither SFT nor RL ever saw.
+5. Click **Save checkpoint** to write `checkpoints/{timestamp}/rl/final_model.pt`, which then appears on the Inference page.
 
 ### Inference
 
@@ -414,10 +428,51 @@ optimizer.step()
 
 **Pre-trained checkpoints**: `checkpoints/{timestamp}/final_model.pt`
 **Fine-tuned checkpoints**: `checkpoints/{timestamp}/sft/final_model.pt`
+**RL checkpoints**: `checkpoints/{timestamp}/rl/final_model.pt`
 
 Both checkpoints are visible in the inference page, clearly labeled:
 - "🏁 Final Model (Pre-trained)"
 - "🏁 Final Model (Fine-tuned)"
+
+---
+
+## Reinforcement Learning Pipeline
+
+### 1. The Task (`rl/arithmetic.py`)
+
+RL needs answers that a program can check, so the task is addition. A question and a correct answer look like this:
+
+```
+Q: What is 4 2 8 + 3 5 7?
+A: <answer>7 8 5</answer>
+```
+
+The reward has three parts: 0.2 if the right number appears anywhere, 0.3 for using the `<answer>` tags, and 1.0 more if the number inside the tags is right. The partial credit gives GRPO something to learn from before the model gets any sums right.
+
+Three design choices matter, and each came from a run that failed without it:
+
+- **Numbers are written one digit at a time.** The GPT-2 tokenizer turns a number like `42` into a single token. A small model then memorises each sum as a separate lookup-table entry and gets about 1% of unseen sums right. With one token per digit, the same model learns column addition and gets about 80% of unseen 3-digit sums right after SFT.
+- **About one problem in ten is held out from SFT and RL.** The split uses a hash, so it is symmetric (if `42 + 35` is held out, so is `35 + 42`) and does not depend on the digits of the sum. An earlier rule based on `(a + b) mod 10` held out every sum ending in 0, so the model never saw such an answer.
+- **The tokenizer must be able to write the prompt.** SentencePiece tokenizers trained on a novel have no tokens for `<`, `+` or most digits, so the RL page refuses those checkpoints and says why.
+
+### 2. One Round of GRPO (`rl/grpo.py`)
+
+```python
+# 1. Draw fresh problems (never a held-out one)
+# 2. Sample G answers to each problem, with a KV cache, stopping at </answer>
+# 3. Score each answer, and compare it with its own group
+advantage = (reward - group_mean) / (group_std + 1e-4)
+# 4. Push every token of an answer by that answer's advantage,
+#    with a KL penalty against a frozen copy of the starting model
+loss = mean(-advantage * log_prob(token) + β * KL(policy || frozen))
+# 5. One optimiser step for the whole round
+```
+
+There is no value network: the group is its own yardstick. Every token in one answer gets the same advantage, so GRPO never asks which token made an answer right.
+
+Each round takes one gradient step on answers that the current model sampled. The probability ratio that PPO clips is therefore always 1, and the code leaves the clip out.
+
+**Problems per update matters.** With one problem per update, the gradient is mostly noise. The Adam optimiser takes a full-sized step in that noisy direction, and the model drifts away from where it started without getting better. Averaging over 8 problems of 8 answers each lets the signal through. In testing, this took held-out accuracy on 3-digit sums from 64% to 78% in 150 updates (learning rate 3e-5), where one problem per update made no progress.
 
 ---
 

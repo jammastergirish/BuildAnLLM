@@ -64,3 +64,17 @@ $$W_{effective} = W + \frac{\alpha}{r} (B A)$$
 
 $$A \in \mathbb{R}^{r \times d_{in}}, \; B \in \mathbb{R}^{d_{out} \times r}$$
 `;
+
+export const grpoEquations = String.raw`
+### Group advantage
+Ask one question $G$ times and score each answer $r_1, \dots, r_G$. Each answer's advantage is how far it beat its own group:
+
+$$A_i = \frac{r_i - \operatorname{mean}(r_1, \dots, r_G)}{\operatorname{std}(r_1, \dots, r_G) + \epsilon}$$
+
+### Loss
+Every token $t$ of answer $i$ shares the same $A_i$. A KL penalty against the frozen starting model $\pi_{\text{ref}}$ keeps the policy from drifting:
+
+$$\mathcal{L} = \frac{1}{G} \sum_{i=1}^{G} \frac{1}{|o_i|} \sum_{t=1}^{|o_i|} \Big( -A_i \log \pi_\theta(o_{i,t} \mid q, o_{i,<t}) + \beta \, \mathrm{KL}_t \Big)$$
+
+$$\mathrm{KL}_t = \frac{\pi_{\text{ref}}}{\pi_\theta} - \log \frac{\pi_{\text{ref}}}{\pi_\theta} - 1$$
+`;

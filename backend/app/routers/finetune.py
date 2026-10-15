@@ -36,16 +36,29 @@ def _parse_payload(payload: str) -> FinetuneJobPayload:
         return FinetuneJobPayload.parse_raw(payload)
 
 
-def _prepare_csv(upload: Optional[UploadFile]) -> Path:
+BUNDLED_DATASETS = {
+    "default": Path("input_data/finetuning/finetuning.csv"),
+    # Teaches the <answer> format used by the RL tab; see rl/arithmetic.py
+    "arithmetic": Path("input_data/finetuning/arithmetic.csv"),
+}
+
+
+def _prepare_csv(upload: Optional[UploadFile], dataset: str = "default") -> Path:
     if upload is not None:
         temp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
         temp.write(upload.file.read())
         temp.close()
         return Path(temp.name)
-    default_path = Path("input_data/finetuning/finetuning.csv")
-    if not default_path.exists():
-        raise HTTPException(status_code=400, detail="Default finetuning CSV not found")
-    return default_path
+    if dataset not in BUNDLED_DATASETS:
+        raise HTTPException(status_code=400, detail=f"Unknown dataset: {dataset}")
+    path = BUNDLED_DATASETS[dataset]
+    if dataset == "arithmetic" and not path.exists():
+        from rl.arithmetic import write_sft_csv
+
+        write_sft_csv(path)
+    if not path.exists():
+        raise HTTPException(status_code=400, detail=f"Dataset CSV not found: {path}")
+    return path
 
 
 @router.post("/jobs", response_model=JobStatusResponse)
@@ -95,7 +108,7 @@ async def create_job(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    csv_path = _prepare_csv(data_file)
+    csv_path = _prepare_csv(data_file, parsed.dataset)
     try:
         dataset = SFTDataset(
             csv_path=str(csv_path),
