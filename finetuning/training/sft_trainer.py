@@ -342,8 +342,13 @@ class SFTTrainer(TrainingVisualizationMixin):
         cfg = self.model.cfg if hasattr(self.model, "cfg") else None
         cfg_dict = cfg.to_dict() if cfg is not None else None
 
-        # Determine model type
-        model_type = "with_einops" if "WithEinops" in self.model.__class__.__name__ else "without_einops"
+        # Determine model type from use_einops, as the pre-training trainer does.
+        # The class is named TransformerModel, so a class-name check alone always
+        # said "without_einops", and the checkpoint then reloaded with no weights.
+        if hasattr(self.model, "use_einops"):
+            model_type = "with_einops" if self.model.use_einops else "without_einops"
+        else:
+            model_type = "with_einops" if "WithEinops" in self.model.__class__.__name__ else "without_einops"
 
         # Get state dict
         model_state_dict = self.model.state_dict()
