@@ -44,6 +44,26 @@ class TestCheckpointServices:
         assert finetuned[str(run_b_sft / "final_model.pt")] is True
         assert finetuned[str(run_a / "checkpoint_1.pt")] is False
 
+    def test_list_checkpoints_stages_and_intermediates(self, tmp_path: Path):
+        base = tmp_path / "checkpoints"
+        run = base / "20240103"
+        (run / "sft").mkdir(parents=True)
+        (run / "rl").mkdir()
+        (run / "final_model.pt").write_text("a", encoding="utf-8")
+        (run / "sft" / "final_model.pt").write_text("b", encoding="utf-8")
+        (run / "sft" / "checkpoint_500.pt").write_text("c", encoding="utf-8")
+        (run / "sft" / "checkpoint_1000.pt").write_text("d", encoding="utf-8")
+        (run / "rl" / "final_model.pt").write_text("e", encoding="utf-8")
+
+        stages = {Path(e["path"]).relative_to(run).as_posix(): e["stage"] for e in list_checkpoints(str(base))}
+        assert stages == {
+            "final_model.pt": "pretrain",
+            "sft/final_model.pt": "sft",
+            "sft/checkpoint_1000.pt": "sft",
+            "sft/checkpoint_500.pt": "sft",
+            "rl/final_model.pt": "rl",
+        }
+
     def test_resolve_checkpoint_path_scoped(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.chdir(tmp_path)
         base = tmp_path / "checkpoints"

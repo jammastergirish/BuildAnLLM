@@ -339,6 +339,7 @@ export default function InferencePage() {
               <option value="">Select checkpoint</option>
               {sortedCheckpoints.map((ckpt) => (
                 <option key={ckpt.id} value={ckpt.id}>
+                  {ckpt.stage && ckpt.stage !== "pretrain" ? `${ckpt.stage.toUpperCase()} · ` : ""}
                   {formatCheckpointTimestamp(new Date(ckpt.mtime * 1000))} · {ckpt.name}
                 </option>
               ))}

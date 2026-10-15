@@ -8,6 +8,7 @@ const links = [
   { href: "/", label: "Overview" },
   { href: "/pretrain", label: "Pre-Training" },
   { href: "/finetune", label: "Fine-Tuning" },
+  { href: "/rl", label: "Reinforcement Learning" },
   { href: "/inference", label: "Inference" },
 ];
 

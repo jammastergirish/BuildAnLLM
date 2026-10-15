@@ -89,3 +89,24 @@ class TestModelLoading:
         # Should still load but skip mismatched keys
         loaded_model, _, _ = load_model_from_checkpoint(checkpoint_path, device)
         assert isinstance(loaded_model, TransformerModel)
+
+
+@pytest.mark.integration
+def test_load_uses_weight_names_over_recorded_model_type(tmp_path):
+    """SFT checkpoints used to record model_type="without_einops" for an
+    einops model. Loading them as recorded silently kept random weights."""
+    from config import ModelConfig
+    from pretraining.model.model import TransformerModel
+    from pretraining.model.model_loader import load_model_from_checkpoint
+
+    cfg = ModelConfig(d_model=32, n_heads=2, d_head=16, d_mlp=64, n_layers=1, n_ctx=16, d_vocab=50)
+    model = TransformerModel(cfg, use_einops=True)
+    path = tmp_path / "sft.pt"
+    torch.save(
+        {"model_state_dict": model.state_dict(), "cfg": cfg.to_dict(), "model_type": "without_einops"},
+        path,
+    )
+    loaded, _, _ = load_model_from_checkpoint(str(path), torch.device("cpu"))
+    assert loaded.use_einops
+    for name, value in model.state_dict().items():
+        assert torch.equal(loaded.state_dict()[name], value), name

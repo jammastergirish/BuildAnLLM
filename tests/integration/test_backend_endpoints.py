@@ -171,7 +171,7 @@ def api_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
     monkeypatch.setattr(finetune, "load_tokenizer_for_checkpoint", lambda *_: DummyTokenizer())
     monkeypatch.setattr(finetune, "SFTDataset", DummySFTDataset)
     monkeypatch.setattr(finetune, "SFTTrainer", DummyTrainer)
-    monkeypatch.setattr(finetune, "_prepare_csv", lambda _: csv_path)
+    monkeypatch.setattr(finetune, "_prepare_csv", lambda *_: csv_path)
     monkeypatch.setattr(finetune, "get_device", lambda: torch.device("cpu"))
     monkeypatch.setattr(finetune, "build_sft_inspect", lambda *_, **__: {"ok": True})
     monkeypatch.setattr(finetune, "build_attention_map", lambda *_, **__: {"attention": []})
