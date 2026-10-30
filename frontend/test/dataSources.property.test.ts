@@ -24,7 +24,7 @@ describe("data source selection properties", () => {
             const selectedNames = new Set(sources.map((s) => s.name));
             const paths = [...selectedNames]
               .map((name) => sources.find((s) => s.name === name)?.filename)
-              .filter((f): f is string => Boolean(f) && f.length > 0);
+              .filter((f): f is string => typeof f === "string" && f.length > 0);
 
             // Paths should all be non-empty strings
             expect(paths.every((p) => typeof p === "string" && p.length > 0)).toBe(true);
@@ -37,10 +37,10 @@ describe("data source selection properties", () => {
 
     it("empty selection produces empty paths array", () => {
       fc.assert(
-        fc.property(fc.constant([]), (sources: never[]) => {
+        fc.property(fc.constant<{ name: string; filename: string }[]>([]), (sources) => {
           const selectedNames = new Set<string>();
           const paths = [...selectedNames]
-            .map((name) => sources.find((_: never) => false)?.filename)
+            .map((name) => sources.find((s) => s.name === name)?.filename)
             .filter((f): f is string => Boolean(f));
 
           expect(paths).toEqual([]);

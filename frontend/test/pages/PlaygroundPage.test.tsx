@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
 import PlaygroundPage from "../../app/playground/page";
@@ -11,7 +12,10 @@ vi.mock("../../lib/api", async () => {
   };
 });
 
-const fetchJsonMock = vi.mocked(fetchJson);
+// fetchJson is generic; give the mock a concrete signature so callbacks are typed.
+const fetchJsonMock = vi.mocked(fetchJson) as unknown as Mock<
+  (path: string, init?: RequestInit) => Promise<any>
+>;
 
 describe("PlaygroundPage", () => {
   beforeEach(() => {

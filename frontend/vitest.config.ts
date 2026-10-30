@@ -11,8 +11,10 @@ export default defineConfig({
       "@plausible-analytics/tracker": plausibleTrackerStub,
     },
   },
-  esbuild: {
-    jsx: "automatic",
+  // Vite 8 compiles with oxc instead of esbuild. tsconfig says jsx "preserve"
+  // for Next.js, so tests must ask for the automatic JSX runtime explicitly.
+  oxc: {
+    jsx: { runtime: "automatic" },
   },
   test: {
     environment: "jsdom",

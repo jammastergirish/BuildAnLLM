@@ -29,7 +29,7 @@ describe("Multi-File Upload Properties", () => {
     it("whitespace-only string has zero words", () => {
       fc.assert(
         fc.property(
-          fc.stringOf(fc.constantFrom(" ", "\t", "\n", "\r")),
+          fc.string({ unit: fc.constantFrom(" ", "\t", "\n", "\r") }),
           (text) => {
             const words = text.split(/\s+/).filter((w) => w.length > 0).length;
             return words === 0;
@@ -62,7 +62,10 @@ describe("Multi-File Upload Properties", () => {
     it("file names with alphanumeric characters are preserved", () => {
       fc.assert(
         fc.property(
-          fc.stringOf(fc.char().filter((c) => /[a-zA-Z0-9_.-]/.test(c)), { minLength: 1 }),
+          fc.string({
+            unit: fc.constantFrom(..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-"),
+            minLength: 1,
+          }),
           (name) => {
             const fullName = `${name}.txt`;
             const file = new File(["content"], fullName, { type: "text/plain" });
