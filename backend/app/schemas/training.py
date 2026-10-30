@@ -51,6 +51,8 @@ class FinetuneJobPayload(BaseModel):
     training: FinetuneTrainingParams = Field(default_factory=FinetuneTrainingParams)
     auto_start: bool = True
     mask_prompt: bool = True
+    # Bundled dataset to use when no CSV is uploaded: "default" or "arithmetic"
+    dataset: str = "default"
 
     model_config = ConfigDict(populate_by_name=True)
 

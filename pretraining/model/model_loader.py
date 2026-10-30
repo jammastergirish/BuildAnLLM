@@ -31,7 +31,7 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> Tu
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     cfg = _extract_config(checkpoint)
-    model_type = checkpoint.get("model_type", "with_einops")
+    model_type = _infer_model_type(checkpoint)
     model = _create_model(cfg, model_type)
     
     # Check if this is a LoRA checkpoint
@@ -74,6 +74,22 @@ def _extract_config(checkpoint: Dict) -> ModelConfig:
             return ModelConfig.from_dict(cfg_dict)
         except Exception:
             return ModelConfig.gpt_small()
+
+
+def _infer_model_type(checkpoint: Dict) -> str:
+    """Pick the implementation whose parameter names match the saved weights.
+
+    The two implementations name their parameters differently (for example
+    embed.W_E versus embed.embedding.weight). Older SFT checkpoints recorded
+    the wrong model_type, and loading them as recorded silently left every
+    weight at its random initial value. The weight names are the ground truth.
+    """
+    keys = checkpoint.get("model_state_dict", {}).keys()
+    if any(k.endswith("embed.W_E") for k in keys):
+        return "with_einops"
+    if any(k.endswith("embed.embedding.weight") for k in keys):
+        return "without_einops"
+    return checkpoint.get("model_type", "with_einops")
 
 
 def _create_model(cfg: ModelConfig, model_type: str):
