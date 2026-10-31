@@ -58,7 +58,7 @@ export default function GradientChart({ data }: { data: GradientData[] }) {
             }}
             labelStyle={{ color: "var(--ink-1)" }}
             itemStyle={{ color: "var(--ink-1)" }}
-            formatter={(value: number) => [value.toFixed(4), "Gradient Norm"]}
+            formatter={(value) => [Number(value).toFixed(4), "Gradient Norm"]}
           />
           <Bar dataKey="norm" fill="var(--accent)" radius={[2, 2, 0, 0]}>
             {data.map((entry, index) => (

@@ -20,6 +20,13 @@ export type LineSeries = {
 type AxisDomainValue = number | "dataMin" | "dataMax" | "auto";
 type AxisDomain = [AxisDomainValue, AxisDomainValue];
 
+// A "dataMax" domain puts a tick at the raw maximum (e.g. 10.85427188873291),
+// so round tick labels to three significant figures.
+const formatTick = (value: number) =>
+  Number.isInteger(value)
+    ? String(value)
+    : String(Number(value.toPrecision(3)));
+
 export default function LineChart({
   data,
   lines,
@@ -58,24 +65,32 @@ export default function LineChart({
             tick={{
               fontSize: 12,
               fill: "var(--chart-text)",
-              fontFamily: "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
+              fontFamily:
+                "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
             }}
             tickLine={{ stroke: "var(--chart-axis)" }}
             axisLine={{ stroke: "var(--chart-axis)" }}
           >
             {xLabel && (
-              <Label value={xLabel} position="insideBottom" offset={-6} fill="var(--chart-text)" />
+              <Label
+                value={xLabel}
+                position="insideBottom"
+                offset={-6}
+                fill="var(--chart-text)"
+              />
             )}
           </XAxis>
           <YAxis
             type="number"
             domain={yDomain}
             allowDataOverflow={Boolean(yDomain)}
+            tickFormatter={formatTick}
             stroke="var(--chart-axis)"
             tick={{
               fontSize: 12,
               fill: "var(--chart-text)",
-              fontFamily: "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
+              fontFamily:
+                "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
             }}
             tickLine={{ stroke: "var(--chart-axis)" }}
             axisLine={{ stroke: "var(--chart-axis)" }}
@@ -96,7 +111,8 @@ export default function LineChart({
               border: "1px solid var(--stroke-strong)",
               color: "var(--ink-1)",
               fontSize: 12,
-              fontFamily: "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
+              fontFamily:
+                "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
             }}
             labelStyle={{ color: "var(--ink-1)" }}
             itemStyle={{ color: "var(--ink-1)" }}
@@ -106,7 +122,8 @@ export default function LineChart({
             wrapperStyle={{
               color: "var(--chart-text)",
               fontSize: 12,
-              fontFamily: "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
+              fontFamily:
+                "var(--font-mono), IBM Plex Mono, SFMono-Regular, Menlo, monospace",
               paddingTop: legendAtTop ? 4 : 0,
             }}
           />
