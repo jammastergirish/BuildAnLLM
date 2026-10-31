@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import PretrainPage from "../../app/pretrain/page";
@@ -48,7 +49,10 @@ vi.mock("../../lib/demo", async () => {
   };
 });
 
-const fetchJsonMock = vi.mocked(fetchJson);
+// fetchJson is generic; give the mock a concrete signature so callbacks are typed.
+const fetchJsonMock = vi.mocked(fetchJson) as unknown as Mock<
+  (path: string, init?: RequestInit) => Promise<any>
+>;
 const useDemoModeMock = vi.mocked(useDemoMode);
 
 describe("PretrainPage", () => {
@@ -476,7 +480,7 @@ describe("PretrainPage", () => {
       await waitFor(
         () => {
           const calls = fetchJsonMock.mock.calls.filter(
-            ([p]: [string]) => p === "/api/pretrain/jobs"
+            ([p]) => p === "/api/pretrain/jobs"
           );
           expect(calls.length).toBeGreaterThan(0);
         },
@@ -484,7 +488,7 @@ describe("PretrainPage", () => {
       );
 
       // Check that FormData was used
-      const call = fetchJsonMock.mock.calls.find(([p]: [string]) => p === "/api/pretrain/jobs");
+      const call = fetchJsonMock.mock.calls.find(([p]) => p === "/api/pretrain/jobs");
       expect(call).toBeDefined();
       const form = call?.[1]?.body as FormData;
       expect(form).toBeInstanceOf(FormData);

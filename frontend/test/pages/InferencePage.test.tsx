@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import InferencePage from "../../app/inference/page";
@@ -40,7 +41,10 @@ vi.mock("../../lib/demo", async () => {
   };
 });
 
-const fetchJsonMock = vi.mocked(fetchJson);
+// fetchJson is generic; give the mock a concrete signature so callbacks are typed.
+const fetchJsonMock = vi.mocked(fetchJson) as unknown as Mock<
+  (path: string, init?: RequestInit) => Promise<any>
+>;
 const useDemoModeMock = vi.mocked(useDemoMode);
 
 describe("InferencePage", () => {
