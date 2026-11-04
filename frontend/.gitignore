@@ -1,0 +1,2 @@
+# Next.js rewrites this file differently for `next dev` and `next build`.
+next-env.d.ts
