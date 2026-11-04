@@ -59,8 +59,11 @@ export default function LineChart({
           <XAxis
             dataKey={xKey}
             type="number"
-            domain={xDomain}
+            // Recharts rounds an unspecified maximum up to a tidy number, so a
+            // 6-layer chart would run to 8. End the axis at the last data point.
+            domain={xDomain ?? [0, "dataMax"]}
             allowDataOverflow={Boolean(xDomain)}
+            tickFormatter={formatTick}
             stroke="var(--chart-axis)"
             tick={{
               fontSize: 12,
