@@ -33,7 +33,7 @@ const LossLandscape3D: React.FC<LossLandscape3DProps> = ({ data }) => {
           showscale: true,
           opacity: 0.8,
           colorbar: {
-            title: 'Loss',
+            title: { text: 'Loss' },
             thickness: 10,
             len: 0.5,
           }
@@ -55,9 +55,9 @@ const LossLandscape3D: React.FC<LossLandscape3DProps> = ({ data }) => {
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
       scene: {
-        xaxis: { title: 'Random Proj U' },
-        yaxis: { title: 'Random Proj V' },
-        zaxis: { title: 'Loss' },
+        xaxis: { title: { text: 'Random Proj U' } },
+        yaxis: { title: { text: 'Random Proj V' } },
+        zaxis: { title: { text: 'Loss' } },
       },
       showlegend: false,
     };
