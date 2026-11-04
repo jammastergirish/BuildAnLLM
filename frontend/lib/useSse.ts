@@ -9,7 +9,12 @@ export type SseEvent<T = unknown> = {
 };
 
 export function useSse<T = unknown>(path?: string, active = true) {
-  const [lastEvent, setLastEvent] = useState<SseEvent<T> | null>(null);
+  // The server can send two events back to back, such as "paused" followed by
+  // the metrics of the step that was already running. React batches those state
+  // updates, so holding only the newest event would drop the earlier one. Queue
+  // them instead and expose one per render, so effects that depend on lastEvent
+  // see every event in order. The newest event stays at the head once it's shown.
+  const [queue, setQueue] = useState<SseEvent<T>[]>([]);
   const [error, setError] = useState<string | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
 
@@ -24,7 +29,7 @@ export function useSse<T = unknown>(path?: string, active = true) {
     const handle = (event: MessageEvent, type: string) => {
       try {
         const payload = event.data ? JSON.parse(event.data) : null;
-        setLastEvent({ type, payload });
+        setQueue((prev) => [...prev, { type, payload }]);
       } catch (err) {
         setError((err as Error).message);
       }
@@ -44,5 +49,11 @@ export function useSse<T = unknown>(path?: string, active = true) {
     };
   }, [path, active]);
 
-  return { lastEvent, error };
+  useEffect(() => {
+    if (queue.length > 1) {
+      setQueue((prev) => prev.slice(1));
+    }
+  }, [queue]);
+
+  return { lastEvent: queue[0] ?? null, error };
 }

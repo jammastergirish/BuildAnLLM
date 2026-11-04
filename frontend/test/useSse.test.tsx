@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { act, render, screen } from "@testing-library/react";
 
 import { useSse } from "../lib/useSse";
@@ -42,6 +43,22 @@ function SseTest({ path, active }: { path?: string; active?: boolean }) {
   );
 }
 
+function SseEffectLog({ path }: { path: string }) {
+  const { lastEvent } = useSse(path);
+  const [seen, setSeen] = useState<string[]>([]);
+  useEffect(() => {
+    if (lastEvent) {
+      setSeen((prev) => [...prev, lastEvent.type]);
+    }
+  }, [lastEvent]);
+  return (
+    <div>
+      <div data-testid="seen">{seen.join(",")}</div>
+      <div data-testid="last">{lastEvent?.type ?? ""}</div>
+    </div>
+  );
+}
+
 describe("useSse", () => {
   beforeEach(() => {
     FakeEventSource.instances = [];
@@ -58,6 +75,34 @@ describe("useSse", () => {
 
     expect(screen.getByTestId("type")).toHaveTextContent("status");
     expect(screen.getByTestId("payload")).toHaveTextContent('{"ok":true}');
+  });
+
+  it("shows effects every event when React batches them", () => {
+    render(<SseEffectLog path="/events" />);
+    const instance = FakeEventSource.instances[0];
+
+    act(() => {
+      instance.emit("status", { status: "paused" });
+      instance.emit("metrics", { iter: 5 });
+      instance.emit("log", { message: "hello" });
+    });
+
+    expect(screen.getByTestId("seen")).toHaveTextContent("status,metrics,log");
+    expect(screen.getByTestId("last")).toHaveTextContent("log");
+  });
+
+  it("shows an effect each event only once across separate arrivals", () => {
+    render(<SseEffectLog path="/events" />);
+    const instance = FakeEventSource.instances[0];
+
+    act(() => {
+      instance.emit("status", { status: "running" });
+    });
+    act(() => {
+      instance.emit("metrics", { iter: 1 });
+    });
+
+    expect(screen.getByTestId("seen")).toHaveTextContent(/^status,metrics$/);
   });
 
   it("reports JSON parse errors", () => {
